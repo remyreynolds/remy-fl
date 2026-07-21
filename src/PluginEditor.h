@@ -1,0 +1,42 @@
+#pragma once
+
+#include <juce_audio_processors/juce_audio_processors.h>
+#include "PluginProcessor.h"
+#include "gui/CustomLookAndFeel.h"
+#include "gui/ChatPanel.h"
+#include "gui/InstrumentPanel.h"
+#include <array>
+#include <memory>
+
+namespace aimidi
+{
+class AIMidiGenEditor : public juce::AudioProcessorEditor,
+                        public juce::DragAndDropContainer
+{
+public:
+    explicit AIMidiGenEditor (AIMidiGenProcessor&);
+    ~AIMidiGenEditor() override;
+
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+private:
+    void handlePrompt (const juce::String& prompt);
+    void refreshPanels();
+
+    AIMidiGenProcessor& processor;
+    CustomLookAndFeel   lnf;
+
+    juce::Label   headerLabel;
+    juce::TextButton previewButton { "▶ Preview All" };
+    juce::TextButton generateAllButton { "Generate All" };
+    juce::TextEditor apiKeyField;
+    juce::Label   apiKeyLabel { {}, "Claude API key:" };
+
+    ChatPanel chatPanel;
+    std::array<std::unique_ptr<InstrumentPanel>, (size_t) InstrumentType::NumTypes> panels;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AIMidiGenEditor)
+};
+
+} // namespace aimidi
