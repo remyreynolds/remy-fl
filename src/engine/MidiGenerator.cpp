@@ -27,7 +27,10 @@ GeneratedPart MidiGenerator::generate (InstrumentType type, const MusicParams& p
         default:                            part = generateMelody (params); break;
     }
     part.type = type;
-    validate (part, params);
+    // Drums are validated per-piece inside generateDrumKit() already —
+    // re-validating the flattened blob here would double-apply swing/humanize.
+    if (type != InstrumentType::Drums)
+        validate (part, params);
     return part;
 }
 
@@ -149,34 +152,80 @@ GeneratedPart MidiGenerator::generatePad (const MusicParams& p)
 
 GeneratedPart MidiGenerator::generateDrums (const MusicParams& p)
 {
+    // Combined "whole loop" view — used when the AI/UI regenerates the kit
+    // as a unit and for the single-file "drag full loop" convenience export.
+    // The real per-piece patterns live in generateDrumKit(); this just
+    // flattens the (already-validated) pieces onto one timeline.
     GeneratedPart part;
-    // General MIDI drum map
-    constexpr int kick = 36, snare = 38, clap = 39, closedHat = 42, openHat = 46;
+    part.type = InstrumentType::Drums;
+
+    auto kit = generateDrumKit (p);
+    for (auto& piece : kit)
+        for (auto& n : piece.notes)
+            part.notes.push_back (n);
+
+    std::sort (part.notes.begin(), part.notes.end(),
+               [] (const NoteEvent& a, const NoteEvent& b)
+               { return a.startBeats < b.startBeats; });
+    return part;
+}
+
+std::array<GeneratedPart, (size_t) DrumPiece::NumPieces>
+    MidiGenerator::generateDrumKit (const MusicParams& p)
+{
+    std::array<GeneratedPart, (size_t) DrumPiece::NumPieces> kit;
+    for (auto& g : kit) g.type = InstrumentType::Drums;
+
+    auto& kickPart  = kit[(size_t) DrumPiece::Kick];
+    auto& snarePart = kit[(size_t) DrumPiece::Snare];
+    auto& clapPart  = kit[(size_t) DrumPiece::Clap];
+    auto& chatPart  = kit[(size_t) DrumPiece::ClosedHat];
+    auto& ohatPart  = kit[(size_t) DrumPiece::OpenHat];
+
+    const int kick      = drumPieceMidiNote (DrumPiece::Kick);
+    const int snare     = drumPieceMidiNote (DrumPiece::Snare);
+    const int clap      = drumPieceMidiNote (DrumPiece::Clap);
+    const int closedHat = drumPieceMidiNote (DrumPiece::ClosedHat);
+    const int openHat   = drumPieceMidiNote (DrumPiece::OpenHat);
 
     for (int bar = 0; bar < p.bars; ++bar)
     {
         const double b0 = bar * 4.0;
+
         // Four-on-the-floor kick
         for (int beat = 0; beat < 4; ++beat)
-            part.notes.push_back ({ b0 + beat, 0.25, kick, 0.95f });
+            kickPart.notes.push_back ({ b0 + beat, 0.25, kick, 0.95f });
 
         // Clap/snare on 2 and 4
-        part.notes.push_back ({ b0 + 1.0, 0.25, clap,  0.85f });
-        part.notes.push_back ({ b0 + 3.0, 0.25, snare, 0.8f });
+        clapPart.notes.push_back  ({ b0 + 1.0, 0.25, clap,  0.85f });
+        snarePart.notes.push_back ({ b0 + 3.0, 0.25, snare, 0.8f });
 
         // Offbeat open hat (the house "tss")
         for (int beat = 0; beat < 4; ++beat)
-            part.notes.push_back ({ b0 + beat + 0.5, 0.2, openHat, 0.6f });
+            ohatPart.notes.push_back ({ b0 + beat + 0.5, 0.2, openHat, 0.6f });
 
         // 1/16 closed hats, energy-scaled
         for (int s = 0; s < 16; ++s)
         {
             if (rand01() > 0.4f + p.energy * 0.5f) continue;
-            part.notes.push_back ({ b0 + s * 0.25, 0.1, closedHat,
-                                    0.4f + rand01() * 0.3f });
+            chatPart.notes.push_back ({ b0 + s * 0.25, 0.1, closedHat,
+                                        0.4f + rand01() * 0.3f });
         }
     }
-    return part;
+
+    for (auto& piece : kit)
+        validate (piece, p);
+
+    return kit;
+}
+
+GeneratedPart MidiGenerator::generateDrumPiece (DrumPiece piece, const MusicParams& p)
+{
+    // Regenerate the whole kit's worth of pattern logic (cheap — a handful
+    // of notes) but only hand back the one piece the caller asked for, so
+    // the other pieces are left completely untouched by this call.
+    auto kit = generateDrumKit (p);
+    return kit[(size_t) piece];
 }
 
 //==============================================================================

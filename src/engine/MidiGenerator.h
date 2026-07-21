@@ -2,6 +2,7 @@
 
 #include "MusicInstructions.h"
 #include <juce_audio_basics/juce_audio_basics.h>
+#include <array>
 #include <random>
 
 namespace aimidi
@@ -19,6 +20,16 @@ public:
 
     /** Generate a single instrument part. Respects params.seed for variety. */
     GeneratedPart generate (InstrumentType type, const MusicParams& params);
+
+    /** Generate the full 5-piece drum kit (kick/snare/clap/closed hat/open
+        hat) as separate, independently-editable parts. Each piece is already
+        validated (scale N/A for drums, but swing/humanize/de-overlap applied). */
+    std::array<GeneratedPart, (size_t) DrumPiece::NumPieces>
+        generateDrumKit (const MusicParams& params);
+
+    /** Regenerate just one drum-kit piece (e.g. only the kick) without
+        touching the pattern of the others. */
+    GeneratedPart generateDrumPiece (DrumPiece piece, const MusicParams& params);
 
     /** Validate + repair a part in place: snap to scale, clamp ranges,
         remove overlaps, clamp velocity. Returns number of notes repaired. */

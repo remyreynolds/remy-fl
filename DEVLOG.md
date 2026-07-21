@@ -48,3 +48,68 @@
    (fastest iteration; no DAW needed).
 3. Fix any compiler errors/warnings; commit.
 4. Load the VST3/AU in FL Studio on Mac; verify drag-to-playlist.
+
+## Phase 1.1 — Live build verified; Drums reorganized into a real kit
+
+### Status
+First successful compile + launch of `AIMidiGen_Standalone` confirmed on
+target Mac (Unix Makefiles generator, no full Xcode required — Command Line
+Tools + Apple Clang is sufficient). Live Claude Messages API integration
+confirmed working end-to-end with a user-supplied key.
+
+### Fixed
+- Missing `#include <juce_events/juce_events.h>` in `AIClient.cpp`/`.h` —
+  `juce::MessageManager` lives in a separate module from `juce_core`.
+
+### Changed — Drums is now a kit, not a blob
+User feedback after first successful MIDI export: dragging "Drums" produced
+one file with kick/snare/clap/hats all interleaved — no way to generate,
+lock, mute, or drag any single piece independently, unlike every other
+instrument.
+
+- `MusicInstructions.h`: new `DrumPiece` enum (Kick/Snare/Clap/ClosedHat/
+  OpenHat) + `toString()` + `drumPieceMidiNote()` (GM drum map, ch. 10).
+- `MidiGenerator`: `generateDrumKit()` builds all 5 pieces as independent,
+  individually-validated `GeneratedPart`s; `generateDrumPiece()` regenerates
+  just one; `generateDrums()` is now a thin "flatten the kit onto one
+  timeline" convenience used for the combined loop export.
+- `AIMidiGenProcessor`: owns a `drumKit` array alongside the existing
+  `parts` array. `generateDrumKit()`/`generateDrumPiece()` respect per-piece
+  locks; `rebuildDrumMasterPart()` keeps `part(Drums)` as a mute-aware merged
+  view for the "drag full loop" shortcut. Preview playback now walks the 5
+  drum-piece sequences directly (live per-piece mute) instead of one merged
+  Drums sequence.
+- New `DrumKitPanel` (GUI): replaces the single "Drums" `InstrumentPanel`
+  cell with 5 rows (Kick/Snare/Clap/Closed Hat/Open Hat), each with its own
+  Generate/Lock/Mute/Drag, plus a "Generate All" / "Drag Full Loop" pair.
+- `PluginEditor`: skips building a generic `InstrumentPanel` for
+  `InstrumentType::Drums`; wires `DrumKitPanel` into the same grid cell.
+
+### Known follow-ups
+- AI prompt schema still only knows the coarse `"Drums"` instrument name —
+  asking Claude to "just change the hi-hats" won't yet target one piece.
+  Fine-grained AI control over individual drum pieces is a later iteration.
+- API key still not persisted across restarts (Keychain — tracked separately).
+
+## Phase 1.2 — Remy CRM UI pass
+
+### Source
+Pulled a design handoff from the `crm-agent` so the plugin follows the same
+Remy CRM visual language instead of generic audio-plugin styling.
+
+### Changed
+- Reworked `CustomLookAndFeel` around a near-black, monochrome-first token set:
+  base background, raised surfaces, muted text, hairline dividers, and restrained
+  active-state highlights.
+- Standardized controls on the Remy CRM shape language: flat fills, 6px corner
+  radius, subtle hover/pressed states, and divider outlines instead of bevels,
+  shadows, gradients, or saturated colors.
+- Updated the editor header into a compact SaaS dashboard-style control band
+  with title, subheader, Claude API status, primary actions, and a circular
+  "Parts ready" meter inspired by the CRM dial panel.
+- Flattened chat, instrument, and drum-kit panels to use consistent spacing,
+  small bold labels, low-contrast dividers, and compact row layouts.
+
+### Validation
+- Could not run CMake in this container because `cmake` is not installed here.
+  Build validation still needs to happen on the Mac toolchain.

@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include <algorithm>
 
 namespace aimidi
 {
@@ -10,6 +11,8 @@ AIMidiGenProcessor::AIMidiGenProcessor()
 {
     for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
         parts[(size_t) t].type = (InstrumentType) t;
+    for (auto& piece : drumKit)
+        piece.type = InstrumentType::Drums;
 }
 
 //==============================================================================
@@ -18,10 +21,17 @@ void AIMidiGenProcessor::prepareToPlay (double sampleRate, int)
     sampleRateHz = sampleRate;
     previewPpqPos = 0.0;
     previewIdx.fill (0);
+    drumPreviewIdx.fill (0);
 }
 
 void AIMidiGenProcessor::generatePart (InstrumentType t)
 {
+    if (t == InstrumentType::Drums)
+    {
+        generateDrumKit();
+        return;
+    }
+
     auto& p = parts[(size_t) t];
     if (p.locked) return;
     p = generator.generate (t, projectParams);
@@ -47,13 +57,57 @@ void AIMidiGenProcessor::regenerateFromAI (const juce::String& prompt,
                         toGen.push_back ((InstrumentType) t);
 
                 for (auto t : toGen)
+                {
+                    if (t == InstrumentType::Drums) { generateDrumKit(); continue; }
                     if (! parts[(size_t) t].locked)
                         parts[(size_t) t] = generator.generate (t, projectParams);
+                }
 
                 rebuildPreviewSequences();
             }
             if (onDone) onDone (r);
         });
+}
+
+//==============================================================================
+void AIMidiGenProcessor::generateDrumKit()
+{
+    auto fresh = generator.generateDrumKit (projectParams);
+    for (size_t i = 0; i < drumKit.size(); ++i)
+        if (! drumKit[i].locked)
+            drumKit[i] = fresh[i];
+
+    rebuildDrumMasterPart();
+    rebuildPreviewSequences();
+}
+
+void AIMidiGenProcessor::generateDrumPiece (DrumPiece dp)
+{
+    auto& piece = drumKit[(size_t) dp];
+    if (piece.locked) return;
+    piece = generator.generateDrumPiece (dp, projectParams);
+
+    rebuildDrumMasterPart();
+    rebuildPreviewSequences();
+}
+
+void AIMidiGenProcessor::rebuildDrumMasterPart()
+{
+    // The "whole loop" convenience view used for the combined drag/export —
+    // reflects the current mix (muted pieces are left out), same idea as a
+    // quick bounce of the kit.
+    auto& master = parts[(size_t) InstrumentType::Drums];
+    master.type = InstrumentType::Drums;
+    master.notes.clear();
+
+    for (auto& piece : drumKit)
+        if (! piece.muted)
+            for (auto& n : piece.notes)
+                master.notes.push_back (n);
+
+    std::sort (master.notes.begin(), master.notes.end(),
+               [] (const NoteEvent& a, const NoteEvent& b)
+               { return a.startBeats < b.startBeats; });
 }
 
 //==============================================================================
@@ -63,6 +117,12 @@ void AIMidiGenProcessor::rebuildPreviewSequences()
         previewSeqs[(size_t) t] = MidiGenerator::toSequence (parts[(size_t) t],
                                                              projectParams.bpm);
     previewIdx.fill (0);
+
+    for (int dp = 0; dp < (int) DrumPiece::NumPieces; ++dp)
+        drumPreviewSeqs[(size_t) dp] = MidiGenerator::toSequence (drumKit[(size_t) dp],
+                                                                   projectParams.bpm);
+    drumPreviewIdx.fill (0);
+
     previewPpqPos = 0.0;
 }
 
@@ -93,11 +153,29 @@ void AIMidiGenProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
         for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
         {
+            if ((InstrumentType) t == InstrumentType::Drums) continue; // handled per-piece below
             if (parts[(size_t) t].muted) continue;
             auto& seq = previewSeqs[(size_t) t];
             auto& idx = previewIdx[(size_t) t];
 
             // wrap
+            if (tick < (idx > 0 ? seq.getEventTime (idx - 1) : 0.0))
+                idx = 0;
+
+            while (idx < seq.getNumEvents()
+                   && seq.getEventTime (idx) <= tick)
+            {
+                midi.addEvent (seq.getEventPointer (idx)->message, s);
+                ++idx;
+            }
+        }
+
+        for (int dp = 0; dp < (int) DrumPiece::NumPieces; ++dp)
+        {
+            if (drumKit[(size_t) dp].muted) continue;
+            auto& seq = drumPreviewSeqs[(size_t) dp];
+            auto& idx = drumPreviewIdx[(size_t) dp];
+
             if (tick < (idx > 0 ? seq.getEventTime (idx - 1) : 0.0))
                 idx = 0;
 

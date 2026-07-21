@@ -29,6 +29,43 @@ inline const char* toString (InstrumentType t)
     }
 }
 
+/** The "Drums" instrument is actually a kit of several independent pieces.
+    Producers expect to generate/lock/mute/drag each of these separately
+    (you don't want your hi-hats locked just because you liked the kick),
+    so the engine and UI treat them as their own mini-parts rather than one
+    monolithic blob of notes. */
+enum class DrumPiece
+{
+    Kick, Snare, Clap, ClosedHat, OpenHat, NumPieces
+};
+
+inline const char* toString (DrumPiece p)
+{
+    switch (p)
+    {
+        case DrumPiece::Kick:      return "Kick";
+        case DrumPiece::Snare:     return "Snare";
+        case DrumPiece::Clap:      return "Clap";
+        case DrumPiece::ClosedHat: return "Closed Hat";
+        case DrumPiece::OpenHat:   return "Open Hat";
+        default:                   return "?";
+    }
+}
+
+/** General MIDI drum-map note number for each piece (channel 10). */
+inline int drumPieceMidiNote (DrumPiece p)
+{
+    switch (p)
+    {
+        case DrumPiece::Kick:      return 36;
+        case DrumPiece::Snare:     return 38;
+        case DrumPiece::Clap:      return 39;
+        case DrumPiece::ClosedHat: return 42;
+        case DrumPiece::OpenHat:   return 46;
+        default:                   return 36;
+    }
+}
+
 /** High-level musical parameters. These come from the UI controls AND/OR
     are filled in by the AI when it parses the prompt. */
 struct MusicParams
