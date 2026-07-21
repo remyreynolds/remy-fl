@@ -1,14 +1,48 @@
 #include "AIClient.h"
+#include <juce_data_structures/juce_data_structures.h>
+#include <juce_events/juce_events.h>
 
 namespace aimidi
 {
 
+namespace
+{
+juce::PropertiesFile::Options settingsOptions()
+{
+    juce::PropertiesFile::Options o;
+    o.applicationName     = "AIMidiGen";
+    o.filenameSuffix      = "settings";
+    o.folderName          = "AIMidiGen";
+    o.osxLibrarySubFolder = "Application Support";
+    o.commonToAllUsers    = false;
+    return o;
+}
+} // namespace
+
 AIClient::AIClient()
 {
-    // Convenience: pick up a key from the environment for local dev.
+    // Prefer env var for local/dev; otherwise restore the last key the user typed.
     if (auto env = juce::SystemStats::getEnvironmentVariable ("ANTHROPIC_API_KEY", {});
         env.isNotEmpty())
+    {
         apiKey = env;
+        loadedFromEnv = true;
+    }
+    else
+    {
+        juce::PropertiesFile props (settingsOptions());
+        apiKey = props.getValue ("anthropicApiKey");
+    }
+}
+
+void AIClient::setApiKey (const juce::String& key)
+{
+    apiKey = key;
+    loadedFromEnv = false;
+
+    juce::PropertiesFile props (settingsOptions());
+    props.setValue ("anthropicApiKey", key);
+    props.saveIfNeeded();
 }
 
 //==============================================================================

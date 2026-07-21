@@ -51,6 +51,13 @@ public:
     void regenerateFromAI (const juce::String& prompt,
                            std::function<void (AIClient::Response)> onDone);
 
+    // ---- Drum kit: kick/snare/clap/closed hat/open hat as separate,
+    //      independently generatable/lockable/mutable/draggable parts. ----
+    GeneratedPart& drumPiece (DrumPiece dp) { return drumKit[(size_t) dp]; }
+    void generateDrumKit();                 // regenerate all unlocked pieces
+    void generateDrumPiece (DrumPiece dp);  // regenerate a single unlocked piece
+    void rebuildDrumMasterPart();           // recompute the merged "whole loop" view in part(Drums)
+
     void togglePreview (bool shouldPlay);
     bool isPreviewing() const { return previewing.load(); }
 
@@ -59,6 +66,7 @@ public:
 private:
     MusicParams projectParams;
     std::array<GeneratedPart, (size_t) InstrumentType::NumTypes> parts;
+    std::array<GeneratedPart, (size_t) DrumPiece::NumPieces> drumKit;
 
     MidiGenerator generator;
     AIClient      aiClient;
@@ -69,6 +77,8 @@ private:
     double previewPpqPos = 0.0;   // position in quarter notes
     std::array<juce::MidiMessageSequence, (size_t) InstrumentType::NumTypes> previewSeqs;
     std::array<int, (size_t) InstrumentType::NumTypes> previewIdx {};
+    std::array<juce::MidiMessageSequence, (size_t) DrumPiece::NumPieces> drumPreviewSeqs;
+    std::array<int, (size_t) DrumPiece::NumPieces> drumPreviewIdx {};
 
     void rebuildPreviewSequences();
 

@@ -47,6 +47,7 @@ target_sources(AIMidiGen PRIVATE
     src/engine/MidiGenerator.cpp
     src/gui/ChatPanel.cpp
     src/gui/InstrumentPanel.cpp
+    src/gui/DrumKitPanel.cpp
 )
 
 target_include_directories(AIMidiGen PRIVATE src)

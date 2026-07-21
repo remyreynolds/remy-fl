@@ -29,8 +29,9 @@ public:
 
     AIClient();
 
-    void setApiKey (const juce::String& key) { apiKey = key; }
+    void setApiKey (const juce::String& key);
     bool hasApiKey() const { return apiKey.isNotEmpty(); }
+    bool apiKeyFromEnvironment() const { return loadedFromEnv; }
 
     /** Send a user prompt. `current` is the project state; `lockedMask` marks
         instruments the AI must not touch. */
@@ -46,6 +47,7 @@ public:
 
 private:
     juce::String apiKey;
+    bool loadedFromEnv = false;
     juce::String model { "claude-sonnet-4-6" };
 
     static juce::String buildSystemPrompt();

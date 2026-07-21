@@ -48,3 +48,45 @@
    (fastest iteration; no DAW needed).
 3. Fix any compiler errors/warnings; commit.
 4. Load the VST3/AU in FL Studio on Mac; verify drag-to-playlist.
+
+## Phase 1.1 — Live build verified; Drums reorganized into a real kit
+
+### Status
+First successful compile + launch of `AIMidiGen_Standalone` confirmed on
+target Mac (Unix Makefiles generator, no full Xcode required — Command Line
+Tools + Apple Clang is sufficient). Live Claude Messages API integration
+confirmed working end-to-end with a user-supplied key.
+
+### Fixed
+- Missing `#include <juce_events/juce_events.h>` in `AIClient.cpp`/`.h` —
+  `juce::MessageManager` lives in a separate module from `juce_core`.
+
+### Changed — Drums is now a kit, not a blob
+User feedback after first successful MIDI export: dragging "Drums" produced
+one file with kick/snare/clap/hats all interleaved — no way to generate,
+lock, mute, or drag any single piece independently, unlike every other
+instrument.
+
+- `MusicInstructions.h`: new `DrumPiece` enum (Kick/Snare/Clap/ClosedHat/
+  OpenHat) + `toString()` + `drumPieceMidiNote()` (GM drum map, ch. 10).
+- `MidiGenerator`: `generateDrumKit()` builds all 5 pieces as independent,
+  individually-validated `GeneratedPart`s; `generateDrumPiece()` regenerates
+  just one; `generateDrums()` is now a thin "flatten the kit onto one
+  timeline" convenience used for the combined loop export.
+- `AIMidiGenProcessor`: owns a `drumKit` array alongside the existing
+  `parts` array. `generateDrumKit()`/`generateDrumPiece()` respect per-piece
+  locks; `rebuildDrumMasterPart()` keeps `part(Drums)` as a mute-aware merged
+  view for the "drag full loop" shortcut. Preview playback now walks the 5
+  drum-piece sequences directly (live per-piece mute) instead of one merged
+  Drums sequence.
+- New `DrumKitPanel` (GUI): replaces the single "Drums" `InstrumentPanel`
+  cell with 5 rows (Kick/Snare/Clap/Closed Hat/Open Hat), each with its own
+  Generate/Lock/Mute/Drag, plus a "Generate All" / "Drag Full Loop" pair.
+- `PluginEditor`: skips building a generic `InstrumentPanel` for
+  `InstrumentType::Drums`; wires `DrumKitPanel` into the same grid cell.
+
+### Known follow-ups
+- AI prompt schema still only knows the coarse `"Drums"` instrument name —
+  asking Claude to "just change the hi-hats" won't yet target one piece.
+  Fine-grained AI control over individual drum pieces is a later iteration.
+- API key still not persisted across restarts (Keychain — tracked separately).

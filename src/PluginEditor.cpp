@@ -33,11 +33,19 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
     addAndMakeVisible (apiKeyLabel);
     apiKeyField.setPasswordCharacter ((juce::juce_wchar) 0x2022);
     apiKeyField.setTextToShowWhenEmpty ("sk-ant-…", CustomLookAndFeel::text.withAlpha (0.35f));
-    if (processor.ai().hasApiKey()) apiKeyField.setText ("(loaded from env)", false);
+    if (processor.ai().hasApiKey())
+        apiKeyField.setText (processor.ai().apiKeyFromEnvironment()
+                                 ? "(loaded from env)"
+                                 : "(saved)",
+                             false);
     apiKeyField.onFocusLost = [this]
     {
         auto k = apiKeyField.getText().trim();
-        if (k.isNotEmpty() && ! k.startsWith ("(")) processor.ai().setApiKey (k);
+        if (k.isNotEmpty() && ! k.startsWith ("("))
+        {
+            processor.ai().setApiKey (k);
+            apiKeyField.setText ("(saved)", false);
+        }
     };
     addAndMakeVisible (apiKeyField);
 
@@ -46,8 +54,11 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
 
     for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
     {
-        auto panel = std::make_unique<InstrumentPanel> ((InstrumentType) t);
         const auto type = (InstrumentType) t;
+        if (type == InstrumentType::Drums)
+            continue; // Drums gets its own multi-piece panel below.
+
+        auto panel = std::make_unique<InstrumentPanel> (type);
 
         panel->onGenerate = [this, type]
         {
@@ -72,6 +83,41 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
         addAndMakeVisible (*panel);
         panels[(size_t) t] = std::move (panel);
     }
+
+    // Drums: kick/snare/clap/closed hat/open hat as independent pieces,
+    // each with its own Generate/Lock/Mute/Drag, plus a whole-loop shortcut.
+    drumKitPanel.onGeneratePiece = [this] (DrumPiece dp)
+    {
+        processor.generateDrumPiece (dp);
+        refreshPanels();
+    };
+    drumKitPanel.onGenerateAll = [this]
+    {
+        processor.generateDrumKit();
+        refreshPanels();
+    };
+    drumKitPanel.onLockChanged = [this] (DrumPiece dp, bool locked)
+    {
+        processor.drumPiece (dp).locked = locked;
+    };
+    drumKitPanel.onMuteChanged = [this] (DrumPiece dp, bool muted)
+    {
+        processor.drumPiece (dp).muted = muted;
+        processor.rebuildDrumMasterPart();
+    };
+    drumKitPanel.requestPieceMidiFile = [this] (DrumPiece dp) -> juce::File
+    {
+        return MidiGenerator::writeTempMidiFile (processor.drumPiece (dp),
+                                                 processor.params(),
+                                                 juce::String (toString (dp)));
+    };
+    drumKitPanel.requestFullKitMidiFile = [this] () -> juce::File
+    {
+        return MidiGenerator::writeTempMidiFile (processor.part (InstrumentType::Drums),
+                                                 processor.params(),
+                                                 "Drums");
+    };
+    addAndMakeVisible (drumKitPanel);
 
     refreshPanels();
     setResizable (true, true);
@@ -101,7 +147,14 @@ void AIMidiGenEditor::handlePrompt (const juce::String& prompt)
 void AIMidiGenEditor::refreshPanels()
 {
     for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
+    {
+        if ((InstrumentType) t == InstrumentType::Drums) continue;
         panels[(size_t) t]->setHasContent (! processor.part ((InstrumentType) t).notes.empty());
+    }
+
+    for (int dp = 0; dp < (int) DrumPiece::NumPieces; ++dp)
+        drumKitPanel.setPieceHasContent ((DrumPiece) dp,
+            ! processor.drumPiece ((DrumPiece) dp).notes.empty());
 }
 
 void AIMidiGenEditor::paint (juce::Graphics& g)
@@ -143,9 +196,14 @@ void AIMidiGenEditor::resized()
     {
         const int col = i % cols;
         const int row = i / cols;
-        panels[(size_t) i]->setBounds (r.getX() + col * (cellW + gap),
-                                       r.getY() + row * (cellH + gap),
-                                       cellW, cellH);
+        juce::Rectangle<int> cell (r.getX() + col * (cellW + gap),
+                                   r.getY() + row * (cellH + gap),
+                                   cellW, cellH);
+
+        if ((InstrumentType) i == InstrumentType::Drums)
+            drumKitPanel.setBounds (cell);
+        else
+            panels[(size_t) i]->setBounds (cell);
     }
 }
 
