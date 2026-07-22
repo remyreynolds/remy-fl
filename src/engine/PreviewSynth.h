@@ -70,6 +70,16 @@ private:
         bool releasing = false;
         int age = 0;
 
+        // Serum-style unison + resonant state-variable low-pass filter
+        static constexpr int kUnison = 7;
+        std::array<double, kUnison> uniPhase {};
+        float svfLp = 0.0f, svfBp = 0.0f;          // filter state
+        float fltEnv = 0.0f;                        // filter envelope 0..1
+        float fltDecay = 0.0f;                      // per-sample env multiplier
+        float fltBaseHz = 800.0f, fltAmtHz = 0.0f;  // cutoff = base + env*amt
+        float fltDamp = 1.0f;                       // damping (lower = more resonance)
+        float svfProcess (float in, float cutoffHz);
+
         // Sample playback
         std::shared_ptr<const LoadedSample> sample;
         bool useSample = false;
@@ -99,6 +109,7 @@ private:
         DrumKitStyle kit = DrumKitStyle::House;
         double sampleRate = 44100.0;
         double phase = 0.0, freq = 100.0;
+        double phaseB = 0.0, phaseC = 0.0; // metallic hat partials (909-style)
         float level = 0.0f, env = 0.0f, envDecay = 0.0f, noise = 1.0f;
         float kickBoom = 0.0f;
         int age = 0;

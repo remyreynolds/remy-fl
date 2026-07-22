@@ -179,6 +179,17 @@ void PreviewSynth::allNotesOff()
 }
 
 //==============================================================================
+float PreviewSynth::PitchedVoice::svfProcess (float in, float cutoffHz)
+{
+    // Chamberlin state-variable filter (low-pass output). Stable below ~sr/6.
+    const float fc = juce::jlimit (30.0f, (float) (sampleRate * 0.16), cutoffHz);
+    const float f  = 2.0f * std::sin (juce::MathConstants<float>::pi * fc / (float) sampleRate);
+    const float hp = in - svfLp - fltDamp * svfBp;
+    svfBp += f * hp;
+    svfLp += f * svfBp;
+    return svfLp;
+}
+
 void PreviewSynth::PitchedVoice::startNote (int midiNote, float velocity,
                                             juce::SynthesiserSound*, int)
 {
@@ -188,6 +199,12 @@ void PreviewSynth::PitchedVoice::startNote (int midiNote, float velocity,
     env = 0.0f;
     releasing = false;
     age = 0;
+    svfLp = svfBp = 0.0f;
+    fltEnv = 1.0f;
+    // Spread unison start phases deterministically so voices never phase-align.
+    for (int u = 0; u < kUnison; ++u)
+        uniPhase[(size_t) u] = juce::MathConstants<double>::twoPi
+                             * std::fmod (0.137 * (u + 1) * (midiNote % 12 + 1), 1.0);
     useSample = false;
     samplePos = 0.0;
     sample.reset();
@@ -243,6 +260,31 @@ void PreviewSynth::PitchedVoice::startNote (int midiNote, float velocity,
         case PartTimbre::BrightLead:
             attack = 0.20f;
             envDecay = (float) std::exp (-1.0 / (sampleRate * 1.1));
+            break;
+        case PartTimbre::SuperSaw:
+            // Serum-style stab/lead: fast attack, musical decay, filter env
+            // opens with velocity and sweeps shut for that "juicy" front.
+            attack = 0.30f;
+            envDecay  = (float) std::exp (-1.0 / (sampleRate * 1.6));
+            fltDecay  = (float) std::exp (-1.0 / (sampleRate * 0.22));
+            fltBaseHz = 420.0f;
+            fltAmtHz  = 1600.0f + 4200.0f * level;  // velocity = brightness
+            fltDamp   = 0.55f;                       // audible resonance edge
+            break;
+        case PartTimbre::FilterBass:
+            // Classic house bass: punchy filter sweep, tight amp decay.
+            freq2 = freq * 0.5; // sub square one octave DOWN
+            attack = 0.5f;
+            envDecay  = (float) std::exp (-1.0 / (sampleRate * 0.38));
+            fltDecay  = (float) std::exp (-1.0 / (sampleRate * 0.11));
+            fltBaseHz = 90.0f;
+            fltAmtHz  = 900.0f + 1900.0f * level;
+            fltDamp   = 0.60f;
+            break;
+        case PartTimbre::OrganBass:
+            // M1-style organ bass: instant on, sustained while held.
+            attack = 0.6f;
+            envDecay = (float) std::exp (-1.0 / (sampleRate * 2.5));
             break;
         case PartTimbre::SoftPiano:
         default:
@@ -341,6 +383,50 @@ void PreviewSynth::PitchedVoice::renderNextBlock (juce::AudioBuffer<float>& outp
 
         switch (timbre)
         {
+            case PartTimbre::SuperSaw:
+            {
+                // 7 detuned polyBLEP saws (center + 3 pairs, up to ±18 cents),
+                // summed then squeezed through the resonant LP swept by fltEnv.
+                static constexpr double detune[kUnison] =
+                    { 1.0, 0.9946, 1.0054, 0.9895, 1.0106, 0.9827, 1.0176 };
+                static constexpr float uniGain[kUnison] =
+                    { 0.30f, 0.22f, 0.22f, 0.16f, 0.16f, 0.11f, 0.11f };
+
+                float mix = 0.0f;
+                for (int u = 0; u < kUnison; ++u)
+                {
+                    const double fu = freq * detune[u];
+                    mix += naiveSaw (uniPhase[(size_t) u], fu / sampleRate) * uniGain[u];
+                    uniPhase[(size_t) u] += fu * w;
+                    if (uniPhase[(size_t) u] > juce::MathConstants<double>::twoPi)
+                        uniPhase[(size_t) u] -= juce::MathConstants<double>::twoPi;
+                }
+                fltEnv *= fltDecay;
+                const float filtered = svfProcess (mix, fltBaseHz + fltAmtHz * fltEnv);
+                sample = filtered * env * level * 0.34f;
+                break;
+            }
+            case PartTimbre::FilterBass:
+            {
+                // Saw + square sub an octave down, through the punchy sweep.
+                const float saw = naiveSaw (phase, dt);
+                const float sub = naiveSquare (phase2, dt * 0.5) * 0.45f;
+                fltEnv *= fltDecay;
+                const float filtered = svfProcess (saw + sub, fltBaseHz + fltAmtHz * fltEnv);
+                sample = filtered * env * level * 0.50f;
+                break;
+            }
+            case PartTimbre::OrganBass:
+            {
+                // M1 organ bass: strong fundamental + octave + a twelfth,
+                // tiny attack click. The chuggy pumping comes from the notes.
+                const float h1 = (float) std::sin (phase);
+                const float h2 = (float) std::sin (phase2) * 0.42f;
+                const float h3 = (float) std::sin (phase3) * 0.20f;
+                const float click = naiveSaw (phase2, dt * 2.0) * std::exp (-t * 60.0f) * 0.18f;
+                sample = (h1 + h2 + h3 + click) * env * level * 0.38f;
+                break;
+            }
             case PartTimbre::ChordSynth:
             {
                 const float s1 = naiveSaw (phase, dt);
@@ -464,6 +550,7 @@ void PreviewSynth::DrumVoice::startNote (int midiNote, float velocity,
     sampleRate = getSampleRate() > 0.0 ? getSampleRate() : 44100.0;
     level = juce::jlimit (0.05f, 1.0f, velocity);
     phase = 0.0;
+    phaseB = phaseC = 0.0;
     env = 1.0f;
     age = 0;
     noise = 1.0f;
@@ -694,8 +781,23 @@ void PreviewSynth::DrumVoice::renderNextBlock (juce::AudioBuffer<float>& outputB
         }
         else
         {
-            const float bright = (kit == DrumKitStyle::Techno || kit == DrumKitStyle::House) ? 0.32f : 0.24f;
-            sampleOut = nextNoise (noise) * env * level * bright;
+            if (kit == DrumKitStyle::Techno || kit == DrumKitStyle::House)
+            {
+                // 909-style metallic hat: two inharmonic square partials
+                // ring-ish against filtered noise instead of plain white hiss.
+                phaseB += juce::MathConstants<double>::twoPi * 3223.0 / sampleRate;
+                phaseC += juce::MathConstants<double>::twoPi * 5837.0 / sampleRate;
+                if (phaseB > juce::MathConstants<double>::twoPi) phaseB -= juce::MathConstants<double>::twoPi;
+                if (phaseC > juce::MathConstants<double>::twoPi) phaseC -= juce::MathConstants<double>::twoPi;
+                const float m1 = phaseB < juce::MathConstants<double>::pi ? 1.0f : -1.0f;
+                const float m2 = phaseC < juce::MathConstants<double>::pi ? 1.0f : -1.0f;
+                const float metal = (m1 * 0.5f + m2 * 0.35f) * 0.45f;
+                sampleOut = (metal + nextNoise (noise) * 0.65f) * env * level * 0.34f;
+            }
+            else
+            {
+                sampleOut = nextNoise (noise) * env * level * 0.24f;
+            }
         }
 
         left[i] += sampleOut;

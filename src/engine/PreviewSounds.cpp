@@ -21,18 +21,18 @@ GenreTimbreMap defaultsFor (GenreMode genre)
     {
         case GenreMode::House:
             m.drumKit = DrumKitStyle::House;
-            setPart (m, InstrumentType::Chords, PartTimbre::HousePiano,
-                     { PartTimbre::HousePiano, PartTimbre::ChordSynth, PartTimbre::SoftPiano });
-            setPart (m, InstrumentType::Melody, PartTimbre::BrightLead,
-                     { PartTimbre::BrightLead, PartTimbre::Pluck, PartTimbre::HousePiano });
-            setPart (m, InstrumentType::Bass, PartTimbre::HouseBass,
-                     { PartTimbre::HouseBass, PartTimbre::Sub808, PartTimbre::AcousticBass });
-            setPart (m, InstrumentType::Pad, PartTimbre::WarmPad,
-                     { PartTimbre::WarmPad, PartTimbre::Strings, PartTimbre::ChordSynth });
+            setPart (m, InstrumentType::Chords, PartTimbre::SuperSaw,
+                     { PartTimbre::SuperSaw, PartTimbre::HousePiano, PartTimbre::ChordSynth, PartTimbre::SoftPiano });
+            setPart (m, InstrumentType::Melody, PartTimbre::SuperSaw,
+                     { PartTimbre::SuperSaw, PartTimbre::BrightLead, PartTimbre::Pluck, PartTimbre::HousePiano });
+            setPart (m, InstrumentType::Bass, PartTimbre::FilterBass,
+                     { PartTimbre::FilterBass, PartTimbre::OrganBass, PartTimbre::HouseBass, PartTimbre::Sub808 });
+            setPart (m, InstrumentType::Pad, PartTimbre::SuperSaw,
+                     { PartTimbre::SuperSaw, PartTimbre::WarmPad, PartTimbre::Strings, PartTimbre::ChordSynth });
             setPart (m, InstrumentType::Arp, PartTimbre::Pluck,
-                     { PartTimbre::Pluck, PartTimbre::BrightLead, PartTimbre::ChordSynth });
-            setPart (m, InstrumentType::CounterMelody, PartTimbre::BrightLead,
-                     { PartTimbre::BrightLead, PartTimbre::Pluck, PartTimbre::SoftPiano });
+                     { PartTimbre::Pluck, PartTimbre::SuperSaw, PartTimbre::BrightLead, PartTimbre::ChordSynth });
+            setPart (m, InstrumentType::CounterMelody, PartTimbre::Pluck,
+                     { PartTimbre::Pluck, PartTimbre::SuperSaw, PartTimbre::BrightLead, PartTimbre::SoftPiano });
             setPart (m, InstrumentType::Drums, PartTimbre::SoftPiano, { PartTimbre::SoftPiano });
             break;
 
@@ -89,12 +89,12 @@ GenreTimbreMap defaultsFor (GenreMode genre)
 
         case GenreMode::Techno:
             m.drumKit = DrumKitStyle::Techno;
-            setPart (m, InstrumentType::Chords, PartTimbre::ChordSynth,
-                     { PartTimbre::ChordSynth, PartTimbre::WarmPad, PartTimbre::HousePiano });
+            setPart (m, InstrumentType::Chords, PartTimbre::SuperSaw,
+                     { PartTimbre::SuperSaw, PartTimbre::ChordSynth, PartTimbre::WarmPad, PartTimbre::HousePiano });
             setPart (m, InstrumentType::Melody, PartTimbre::BrightLead,
-                     { PartTimbre::BrightLead, PartTimbre::Pluck, PartTimbre::ChordSynth });
-            setPart (m, InstrumentType::Bass, PartTimbre::HouseBass,
-                     { PartTimbre::HouseBass, PartTimbre::Sub808, PartTimbre::ChordSynth });
+                     { PartTimbre::BrightLead, PartTimbre::SuperSaw, PartTimbre::Pluck, PartTimbre::ChordSynth });
+            setPart (m, InstrumentType::Bass, PartTimbre::FilterBass,
+                     { PartTimbre::FilterBass, PartTimbre::HouseBass, PartTimbre::Sub808, PartTimbre::ChordSynth });
             setPart (m, InstrumentType::Pad, PartTimbre::WarmPad,
                      { PartTimbre::WarmPad, PartTimbre::ChordSynth });
             setPart (m, InstrumentType::Arp, PartTimbre::Pluck,

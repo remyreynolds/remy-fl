@@ -30,6 +30,9 @@ enum class PartTimbre
     HouseBass,
     AcousticBass,
     Strings,
+    SuperSaw,    // Serum-style detuned 7-voice unison saw through a resonant LP
+    FilterBass,  // classic house bass: saw+sub through envelope-swept filter
+    OrganBass,   // M1-style house organ bass
     NumTimbres
 };
 
@@ -71,6 +74,9 @@ inline const char* toString (PartTimbre t)
         case PartTimbre::HouseBass:    return "House Bass";
         case PartTimbre::AcousticBass: return "Acoustic Bass";
         case PartTimbre::Strings:      return "Strings";
+        case PartTimbre::SuperSaw:     return "Super Saw";
+        case PartTimbre::FilterBass:   return "Filter Bass";
+        case PartTimbre::OrganBass:    return "Organ Bass";
         default:                       return "?";
     }
 }
