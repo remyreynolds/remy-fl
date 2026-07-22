@@ -48,14 +48,14 @@ void ChordDashboardView::paint (juce::Graphics& g)
 
     auto r = getLocalBounds().reduced (10, 8);
     auto title = r.removeFromTop (18);
-    g.setFont (CustomLookAndFeel::font (12.0f, juce::Font::bold));
+    g.setFont (CustomLookAndFeel::font (13.0f, juce::Font::bold));
     g.setColour (CustomLookAndFeel::txt1);
-    g.drawText ("Chord dashboard", title.removeFromLeft (140),
+    g.drawText ("Chords", title.removeFromLeft (72),
                 juce::Justification::centredLeft, false);
 
     g.setFont (CustomLookAndFeel::font (11.0f));
     g.setColour (CustomLookAndFeel::txt2);
-    g.drawText ("What's sounding in each part · follow the playhead",
+    g.drawText ("Live harmony · follow playhead",
                 title, juce::Justification::centredLeft, false);
 
     r.removeFromTop (6);

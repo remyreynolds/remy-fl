@@ -21,7 +21,7 @@ InstrumentPanel::InstrumentPanel (InstrumentType t) : type (t)
 
     chordLabel.setText ("—", juce::dontSendNotification);
     chordLabel.setFont (CustomLookAndFeel::font (11.0f));
-    chordLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::accent);
+    chordLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
     chordLabel.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (chordLabel);
 
@@ -73,8 +73,16 @@ InstrumentPanel::InstrumentPanel (InstrumentType t) : type (t)
     };
     addAndMakeVisible (soundCombo);
 
+    generateBtn.setComponentID ("primary");
     generateBtn.onClick = [this] { if (onGenerate) onGenerate(); };
     addAndMakeVisible (generateBtn);
+
+    varyBtn.setComponentID ("outline");
+    continueBtn.setComponentID ("outline");
+    lockBtn.setComponentID ("outline");
+    muteBtn.setComponentID ("outline");
+    exportBtn.setComponentID ("outline");
+    minimizeBtn.setComponentID ("ghost");
 
     varyBtn.setTooltip ("AI variation of this part (keeps key / BPM / vibe)");
     varyBtn.onClick = [this] { if (onVary) onVary(); };
@@ -238,23 +246,19 @@ void InstrumentPanel::setVolume (float gain01)
 
 void InstrumentPanel::paint (juce::Graphics& g)
 {
-    auto bounds = getLocalBounds().toFloat().reduced (0.5f);
-    g.setColour (CustomLookAndFeel::bg2);
-    g.fillRoundedRectangle (bounds, CustomLookAndFeel::radius);
-    g.setColour (CustomLookAndFeel::line.withAlpha (0.7f));
-    g.drawRoundedRectangle (bounds, CustomLookAndFeel::radius, 1.0f);
+    CustomLookAndFeel::drawPanel (g, getLocalBounds());
 
-    auto titleArea = getLocalBounds().reduced (12).removeFromTop (22);
-    auto dot = titleArea.removeFromRight (14);
-    g.setColour (hasContent ? CustomLookAndFeel::accent : CustomLookAndFeel::txt2.withAlpha (0.35f));
-    g.fillEllipse (dot.toFloat().withSizeKeepingCentre (7, 7));
+    auto titleArea = getLocalBounds().reduced (12, 10).removeFromTop (20);
+    auto dot = titleArea.removeFromRight (12);
+    g.setColour (hasContent ? CustomLookAndFeel::success : CustomLookAndFeel::txt3);
+    g.fillEllipse (dot.toFloat().withSizeKeepingCentre (6, 6));
 }
 
 void InstrumentPanel::resized()
 {
-    auto r = getLocalBounds().reduced (8);
-    auto titleRow = r.removeFromTop (22);
-    minimizeBtn.setBounds (titleRow.removeFromRight (26).reduced (1));
+    auto r = getLocalBounds().reduced (12, 10);
+    auto titleRow = r.removeFromTop (20);
+    minimizeBtn.setBounds (titleRow.removeFromRight (24).reduced (1));
     titleRow.removeFromRight (4);
     title.setBounds (titleRow);
 
@@ -262,26 +266,26 @@ void InstrumentPanel::resized()
         return;
 
     r.removeFromTop (6);
-    chordLabel.setBounds (r.removeFromTop (14));
-    r.removeFromTop (2);
+    chordLabel.setBounds (r.removeFromTop (13));
+    r.removeFromTop (4);
 
-    auto midiRow = r.removeFromTop (26);
-    midiLabel.setBounds (midiRow.removeFromLeft (40));
+    auto midiRow = r.removeFromTop (28);
+    midiLabel.setBounds (midiRow.removeFromLeft (36));
     midiCombo.setBounds (midiRow);
 
     r.removeFromTop (4);
-    auto synthRow = r.removeFromTop (24);
-    synthLabel.setBounds (synthRow.removeFromLeft (40));
+    auto synthRow = r.removeFromTop (28);
+    synthLabel.setBounds (synthRow.removeFromLeft (36));
     soundCombo.setBounds (synthRow);
 
     r.removeFromTop (4);
-    auto volRow = r.removeFromTop (18);
-    volLabel.setBounds (volRow.removeFromLeft (28));
+    auto volRow = r.removeFromTop (16);
+    volLabel.setBounds (volRow.removeFromLeft (24));
     volSlider.setBounds (volRow);
 
-    r.removeFromTop (6);
-    auto row1 = r.removeFromTop (26);
-    const int gap = 4;
+    r.removeFromTop (8);
+    auto row1 = r.removeFromTop (30);
+    const int gap = 6;
     const int w3 = (row1.getWidth() - gap * 2) / 3;
     generateBtn.setBounds (row1.removeFromLeft (w3));
     row1.removeFromLeft (gap);
@@ -290,13 +294,13 @@ void InstrumentPanel::resized()
     continueBtn.setBounds (row1);
 
     r.removeFromTop (6);
-    auto row2 = r.removeFromTop (26);
+    auto row2 = r.removeFromTop (28);
     lockBtn.setBounds (row2.removeFromLeft (row2.getWidth() / 2 - 3));
     row2.removeFromLeft (6);
     muteBtn.setBounds (row2);
 
     r.removeFromTop (6);
-    auto row3 = r.removeFromTop (26);
+    auto row3 = r.removeFromTop (28);
     dragBtn.setBounds (row3.removeFromLeft (row3.getWidth() / 2 - 3));
     row3.removeFromLeft (6);
     exportBtn.setBounds (row3);

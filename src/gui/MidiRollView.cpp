@@ -7,7 +7,7 @@ namespace aimidi
 
 MidiRollView::MidiRollView()
 {
-    title.setText ("MIDI", juce::dontSendNotification);
+    title.setText ("Piano roll", juce::dontSendNotification);
     title.setFont (CustomLookAndFeel::font (13.0f, juce::Font::bold));
     title.setColour (juce::Label::textColourId, CustomLookAndFeel::txt1);
     addAndMakeVisible (title);
@@ -42,6 +42,11 @@ void MidiRollView::setPlayheadBeats (double beats)
         return;
     playheadBeats = beats;
     repaint();
+}
+
+void MidiRollView::setFocusLabel (const juce::String& label)
+{
+    title.setText (label.isNotEmpty() ? label : "Piano roll", juce::dontSendNotification);
 }
 
 void MidiRollView::clear()
@@ -87,7 +92,7 @@ void MidiRollView::resized()
 {
     auto r = getLocalBounds().reduced (12);
     auto top = r.removeFromTop (20);
-    title.setBounds (top.removeFromLeft (60));
+    title.setBounds (top.removeFromLeft (90));
     subtitle.setBounds (top);
 }
 
@@ -116,10 +121,11 @@ void MidiRollView::paint (juce::Graphics& g)
     r.removeFromTop (6);
     auto roll = r.toFloat().reduced (0.5f);
 
-    g.setColour (CustomLookAndFeel::bg1);
-    g.fillRoundedRectangle (roll, CustomLookAndFeel::radius);
-    g.setColour (CustomLookAndFeel::line);
-    g.drawRoundedRectangle (roll, CustomLookAndFeel::radius, 1.0f);
+    // Deep inset grid — shadcn input/well
+    CustomLookAndFeel::drawInsetWell (g, roll.toNearestInt(), CustomLookAndFeel::radiusSm);
+    // Re-read float after border draw for note area
+    g.setColour (CustomLookAndFeel::bg0);
+    g.fillRoundedRectangle (roll.reduced (1.0f), CustomLookAndFeel::radiusSm - 1.0f);
 
     const float leftGutter = 32.0f;
     auto grid = roll.reduced (1.0f);

@@ -26,6 +26,8 @@ public:
     void setNotes (std::vector<NoteDraw> notes);
     /** Playhead in quarter-note beats; pass < 0 to hide. */
     void setPlayheadBeats (double beats);
+    /** Title override for focused-lane mode (empty = "Piano roll"). */
+    void setFocusLabel (const juce::String& label);
     void clear();
 
     void paint (juce::Graphics&) override;

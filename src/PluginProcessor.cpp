@@ -798,12 +798,59 @@ void AIMidiGenProcessor::setBpm (double bpm)
     projectParams.bpm = juce::jlimit (40.0, 240.0, bpm);
 }
 
+void AIMidiGenProcessor::setHostTempoSync (bool shouldSync)
+{
+    hostTempoSync.store (shouldSync);
+}
+
+void AIMidiGenProcessor::setHostMidiOut (bool shouldEmit)
+{
+    hostMidiOut.store (shouldEmit);
+}
+
+void AIMidiGenProcessor::setPreviewAudition (bool shouldAudition)
+{
+    previewAudition.store (shouldAudition);
+}
+
+bool AIMidiGenProcessor::getHostTransport (bool& isPlaying, double& ppqPosition, double& bpm) const
+{
+    isPlaying = false;
+    ppqPosition = 0.0;
+    bpm = projectParams.bpm;
+
+    auto* ph = getPlayHead();
+    if (ph == nullptr)
+        return false;
+
+    if (auto pos = ph->getPosition())
+    {
+        if (auto b = pos->getBpm())
+            bpm = *b;
+        if (auto ppq = pos->getPpqPosition())
+            ppqPosition = *ppq;
+        isPlaying = pos->getIsPlaying();
+        return true;
+    }
+    return false;
+}
+
+void AIMidiGenProcessor::pullHostTempoIfNeeded()
+{
+    if (! hostTempoSync.load())
+        return;
+
+    bool playing = false;
+    double ppq = 0.0, bpm = projectParams.bpm;
+    if (getHostTransport (playing, ppq, bpm) && bpm > 0.0)
+        projectParams.bpm = juce::jlimit (40.0, 240.0, bpm);
+}
+
 void AIMidiGenProcessor::togglePreview (bool shouldPlay)
 {
     previewing.store (shouldPlay);
     if (shouldPlay)
     {
-        // Ensure pack WAVs are loaded into the synth before notes fire
         syncSamplesToSynth();
         rebuildPreviewSequences();
     }
@@ -811,17 +858,15 @@ void AIMidiGenProcessor::togglePreview (bool shouldPlay)
         previewSynth.allNotesOff();
 }
 
-void AIMidiGenProcessor::collectPreviewMidi (juce::MidiBuffer& dest, int numSamples)
+void AIMidiGenProcessor::collectMidiForPpqWindow (juce::MidiBuffer& dest, int numSamples,
+                                                  double startPpqInLoop, double ppqPerSample)
 {
-    const double bpm          = projectParams.bpm;
-    const double ppqPerSample = bpm / (60.0 * sampleRateHz);
-    const double ticksPerQ    = MidiGenerator::ticksPerQuarter;
-    const double loopLenQ     = projectParams.bars * 4.0;
-    double pos = previewPpqPos.load();
+    const double ticksPerQ = MidiGenerator::ticksPerQuarter;
+    const double loopLenQ  = projectParams.bars * 4.0;
 
     for (int s = 0; s < numSamples; ++s)
     {
-        const double ppq  = pos + s * ppqPerSample;
+        const double ppq  = startPpqInLoop + s * ppqPerSample;
         const double tick = std::fmod (ppq, loopLenQ) * ticksPerQ;
 
         for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
@@ -879,7 +924,16 @@ void AIMidiGenProcessor::collectPreviewMidi (juce::MidiBuffer& dest, int numSamp
             }
         }
     }
+}
 
+void AIMidiGenProcessor::collectPreviewMidi (juce::MidiBuffer& dest, int numSamples)
+{
+    const double bpm          = projectParams.bpm;
+    const double ppqPerSample = bpm / (60.0 * sampleRateHz);
+    const double loopLenQ     = projectParams.bars * 4.0;
+    double pos = previewPpqPos.load();
+
+    collectMidiForPpqWindow (dest, numSamples, pos, ppqPerSample);
     previewPpqPos.store (std::fmod (pos + numSamples * ppqPerSample, loopLenQ));
 }
 
@@ -890,13 +944,55 @@ void AIMidiGenProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     buffer.clear();
     midi.clear();
 
-    if (! previewing.load())
+    pullHostTempoIfNeeded();
+
+    bool hostPlaying = false;
+    double hostPpq = 0.0, hostBpm = projectParams.bpm;
+    const bool haveHost = getHostTransport (hostPlaying, hostPpq, hostBpm);
+
+    const bool internalPreview = previewing.load();
+    const bool emitHostMidi = hostMidiOut.load() && haveHost && hostPlaying;
+
+    if (! internalPreview && ! emitHostMidi)
         return;
 
-    juce::MidiBuffer previewMidi;
-    collectPreviewMidi (previewMidi, buffer.getNumSamples());
+    // Keep sequences warm for host MIDI out without requiring Preview first
+    if (emitHostMidi && previewSeqs[0].getNumEvents() == 0
+        && parts[0].notes.empty() == false)
+        rebuildPreviewSequences();
+    else if (emitHostMidi)
+    {
+        // Rebuild if empty so host play still works after generate
+        bool anySeq = false;
+        for (auto& s : previewSeqs) if (s.getNumEvents() > 0) { anySeq = true; break; }
+        for (auto& s : drumPreviewSeqs) if (s.getNumEvents() > 0) { anySeq = true; break; }
+        if (! anySeq)
+            rebuildPreviewSequences();
+    }
 
-    previewSynth.render (buffer, previewMidi);
+    juce::MidiBuffer previewMidi;
+    const double loopLenQ = projectParams.bars * 4.0;
+
+    if (emitHostMidi)
+    {
+        const double startInLoop = std::fmod (juce::jmax (0.0, hostPpq), loopLenQ);
+        const double prev = previewPpqPos.load();
+        // Loop wrap or host seek — resync event cursors
+        if (startInLoop + 0.05 < prev || std::abs (startInLoop - prev) > 1.0)
+        {
+            previewIdx.fill (0);
+            drumPreviewIdx.fill (0);
+        }
+        previewPpqPos.store (startInLoop);
+        collectPreviewMidi (previewMidi, buffer.getNumSamples());
+    }
+    else
+    {
+        collectPreviewMidi (previewMidi, buffer.getNumSamples());
+    }
+
+    if (internalPreview && previewAudition.load())
+        previewSynth.render (buffer, previewMidi);
 
     midi.addEvents (previewMidi, 0, buffer.getNumSamples(), 0);
 }

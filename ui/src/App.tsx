@@ -1,19 +1,16 @@
-import '@fontsource/dm-sans/400.css'
-import '@fontsource/dm-sans/500.css'
-import '@fontsource/dm-sans/600.css'
-import '@fontsource/ibm-plex-mono/400.css'
-import '@fontsource/ibm-plex-mono/500.css'
-import '@fontsource/instrument-serif/400.css'
-import { Brain, CircleHelp, Disc3, History, Library, Radio, Sparkles } from 'lucide-react'
+import { Brain, CircleHelp, Disc3, History, Library, MessageSquare, Radio, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { relayApi, RelayError } from './api'
 import { BrainSurface } from './components/BrainSurface'
+import { ChatSurface } from './components/ChatSurface'
 import { GenerateSurface, type GenerationControls } from './components/GenerateSurface'
 import { HistorySurface } from './components/HistorySurface'
 import { type ToastState, ShortcutOverlay, Toast } from './components/Overlays'
 import { ReferencesSurface } from './components/ReferencesSurface'
 import { SessionStrip } from './components/SessionStrip'
+import { Badge } from './components/ui/badge'
+import { Button } from './components/ui/button'
 import { emptySession, mockBrain, mockFingerprints } from './mockData'
 import type { BrainState, Fingerprint, Generation, HistoryItem, ReferenceAnalysis, Role, SessionState, SoundType, Surface } from './types'
 import './App.css'
@@ -192,17 +189,26 @@ function App() {
         <p>MIDI Agent is designed for a desktop workspace at least 1100px wide.</p>
       </div>
       <header className="app-header">
-        <button className="brand" type="button" onClick={() => setSurface('generate')}><Radio size={17} /><span>MIDI</span><em>AGENT</em></button>
+        <button className="brand" type="button" onClick={() => setSurface('generate')}>
+          <Radio size={17} /><span>MIDI</span><em>AGENT</em>
+        </button>
         <nav aria-label="Main surfaces">
-          <NavButton surface="generate" current={surface} onClick={setSurface} icon={<Sparkles size={15} />} label="Generate" />
-          <NavButton surface="history" current={surface} onClick={setSurface} icon={<History size={15} />} label="History" />
-          <NavButton surface="brain" current={surface} onClick={setSurface} icon={<Brain size={15} />} label="Brain" />
-          <NavButton surface="references" current={surface} onClick={setSurface} icon={<Library size={15} />} label="References" />
+          <div className="nav-tabs" role="tablist">
+            <NavButton surface="generate" current={surface} onClick={setSurface} icon={<Sparkles size={15} />} label="Generate" />
+            <NavButton surface="chat" current={surface} onClick={setSurface} icon={<MessageSquare size={15} />} label="Chat" />
+            <NavButton surface="history" current={surface} onClick={setSurface} icon={<History size={15} />} label="History" />
+            <NavButton surface="brain" current={surface} onClick={setSurface} icon={<Brain size={15} />} label="Brain" />
+            <NavButton surface="references" current={surface} onClick={setSurface} icon={<Library size={15} />} label="References" />
+          </div>
         </nav>
         <div className="header-status">
-          <span className={connected ? 'status-dot is-connected' : 'status-dot'} />
-          relay {connected ? 'connected' : 'offline'}
-          <button type="button" onClick={() => setShowShortcuts(true)} aria-label="Keyboard shortcuts"><CircleHelp size={15} /></button>
+          <Badge variant={connected ? 'secondary' : 'outline'} className="gap-1.5 font-mono text-[10px] font-normal tracking-wide">
+            <span className={connected ? 'status-dot is-connected' : 'status-dot'} />
+            {connected ? 'connected' : 'offline'}
+          </Badge>
+          <Button type="button" variant="ghost" size="icon" onClick={() => setShowShortcuts(true)} aria-label="Keyboard shortcuts">
+            <CircleHelp size={15} />
+          </Button>
         </div>
       </header>
 
@@ -247,6 +253,13 @@ function App() {
                 void relayApi.feedback(session.session_id, rating).then(() => setToast({ message: rating > 0 ? 'Kept signal learned.' : 'Rejection noted for the next plan.', kind: 'success' })).catch(showError)
               }}
               onTweak={(value) => void runGenerate(value)}
+            />
+          )}
+          {surface === 'chat' && (
+            <ChatSurface
+              sessionId={session.session_id}
+              bars={session.bars}
+              onGenerated={() => setToast({ message: 'MIDI generated from chat — open Generate to preview.', kind: 'success' })}
             />
           )}
           {surface === 'history' && (

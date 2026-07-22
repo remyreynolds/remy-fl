@@ -54,6 +54,7 @@ target_sources(AIMidiGen PRIVATE
     src/engine/MidiLibrary.cpp
     src/gui/ChatPanel.cpp
     src/gui/InstrumentPanel.cpp
+    src/gui/InstrumentLane.cpp
     src/gui/DrumKitPanel.cpp
     src/gui/MidiRollView.cpp
     src/gui/ChordDashboardView.cpp

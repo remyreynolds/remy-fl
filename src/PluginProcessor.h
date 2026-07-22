@@ -88,7 +88,19 @@ public:
     void setBpm (double bpm);
     double getBpm() const { return projectParams.bpm; }
 
-    /** Current preview position in quarter-note beats within the loop (UI thread safe). */
+    /** When true, project BPM follows the host playhead (DAW tempo). */
+    void setHostTempoSync (bool shouldSync);
+    bool isHostTempoSync() const { return hostTempoSync.load(); }
+    /** When true and host is playing, emit MIDI from parts (MIDI out to DAW). */
+    void setHostMidiOut (bool shouldEmit);
+    bool isHostMidiOut() const { return hostMidiOut.load(); }
+    /** Audition through built-in preview synth (can run with or without host MIDI out). */
+    void setPreviewAudition (bool shouldAudition);
+    bool isPreviewAudition() const { return previewAudition.load(); }
+    /** Read host playhead; returns false if unavailable (e.g. standalone idle). */
+    bool getHostTransport (bool& isPlaying, double& ppqPosition, double& bpm) const;
+
+    /** Current preview / host-relative position in quarter-note beats within the loop. */
     double getPreviewPositionBeats() const { return previewPpqPos.load(); }
     double getLoopLengthBeats() const { return projectParams.bars * 4.0; }
 
@@ -172,6 +184,9 @@ private:
 
     // --- preview playback ---
     std::atomic<bool> previewing { false };
+    std::atomic<bool> hostTempoSync { true };
+    std::atomic<bool> hostMidiOut { true };
+    std::atomic<bool> previewAudition { true };
     double sampleRateHz = 44100.0;
     std::atomic<double> previewPpqPos { 0.0 }; // quarter notes within the loop
     std::array<juce::MidiMessageSequence, (size_t) InstrumentType::NumTypes> previewSeqs;
@@ -181,7 +196,11 @@ private:
 
     void rebuildPreviewSequences();
     void collectPreviewMidi (juce::MidiBuffer& dest, int numSamples);
+    /** Emit notes for a host-aligned PPQ window (loop-wrapped). */
+    void collectMidiForPpqWindow (juce::MidiBuffer& dest, int numSamples,
+                                  double startPpqInLoop, double ppqPerSample);
     void syncPreviewSounds();
+    void pullHostTempoIfNeeded();
     void applyMidiPattern (MidiPattern& pattern, juce::String& errorOut);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AIMidiGenProcessor)

@@ -1,6 +1,6 @@
 export type Role = 'chords' | 'bass' | 'melody' | 'arp' | 'perc'
 export type SoundType = 'pluck' | 'pad' | 'keys' | 'stab' | 'sub' | 'lead'
-export type Surface = 'generate' | 'history' | 'brain' | 'references'
+export type Surface = 'generate' | 'chat' | 'history' | 'brain' | 'references'
 
 export interface MidiNote {
   pitch: number

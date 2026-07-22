@@ -82,6 +82,7 @@ DrumKitPanel::DrumKitPanel()
         addAndMakeVisible (row.dragBtn);
     }
 
+    generateAllBtn.setComponentID ("primary");
     generateAllBtn.onClick = [this] { if (onGenerateAll) onGenerateAll(); };
     addAndMakeVisible (generateAllBtn);
 
@@ -181,17 +182,12 @@ void DrumKitPanel::setSampleOptions (DrumPiece piece,
 
 void DrumKitPanel::paint (juce::Graphics& g)
 {
-    auto bounds = getLocalBounds().toFloat().reduced (0.5f);
-    g.setColour (CustomLookAndFeel::bg2);
-    g.fillRoundedRectangle (bounds, CustomLookAndFeel::radius);
-    g.setColour (CustomLookAndFeel::line.withAlpha (0.7f));
-    g.drawRoundedRectangle (bounds, CustomLookAndFeel::radius, 1.0f);
+    CustomLookAndFeel::drawPanel (g, getLocalBounds());
 
-    auto titleArea = getLocalBounds().reduced (12).removeFromTop (22);
-    auto dot = titleArea.removeFromRight (14);
-    g.setColour (fullKitHasContent ? CustomLookAndFeel::accent
-                                   : CustomLookAndFeel::txt2.withAlpha (0.35f));
-    g.fillEllipse (dot.toFloat().withSizeKeepingCentre (7, 7));
+    auto titleArea = getLocalBounds().reduced (12, 10).removeFromTop (20);
+    auto dot = titleArea.removeFromRight (12);
+    g.setColour (fullKitHasContent ? CustomLookAndFeel::success : CustomLookAndFeel::txt3);
+    g.fillEllipse (dot.toFloat().withSizeKeepingCentre (6, 6));
 }
 
 void DrumKitPanel::resized()
