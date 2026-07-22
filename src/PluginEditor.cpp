@@ -65,8 +65,12 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
     generateSurface.addAndMakeVisible (generateAllButton);
 
     exportAllButton.setComponentID ("ghost");
-    exportAllButton.setTooltip ("Export a multi-track MIDI file of all ready parts");
+    exportAllButton.setTooltip ("Drag the full multi-track MIDI into FL Studio, or click to save it as a file");
     exportAllButton.onClick = [this] { exportAllTracks(); };
+    exportAllButton.getFileToDrag = [this] () -> juce::File
+    {
+        return processor.exportAllPartsMidiFile();
+    };
     addAndMakeVisible (exportAllButton);
 
     undoButton.setComponentID ("ghost");

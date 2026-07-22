@@ -90,7 +90,7 @@ private:
     juce::TextButton previewButton { "Preview" };
     juce::TextButton undoButton { "Undo" };
     juce::TextButton generateAllButton { "Generate all" };
-    juce::TextButton exportAllButton { "Export all" };
+    FileDragButton exportAllButton { "Export all" };
     juce::TextButton addSoundsButton { "Add sounds" };
     juce::TextButton addMidiButton { "Add MIDI" };
     juce::TextButton soundsFolderButton { "Folder" };
