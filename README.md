@@ -15,7 +15,7 @@ vibes" — the AI maps artists and slang to the right style.
 ## Quickest path: one command
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/remyreynolds/ai-midi-gen/main/install-mac.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/remyreynolds/remy-fl/ai-midi-gen-plugin/install-mac.sh)
 ```
 
 That installs the build tools if missing, clones/updates the source, builds

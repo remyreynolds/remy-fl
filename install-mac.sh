@@ -13,7 +13,11 @@
 # ============================================================================
 set -e
 
-REPO="https://github.com/remyreynolds/ai-midi-gen.git"
+# NOTE: the plugin currently lives on a dedicated branch of the remy-fl repo
+# (the GitHub token available to the agent can only write there). Once a
+# dedicated ai-midi-gen repo exists, change REPO and drop BRANCH.
+REPO="https://github.com/remyreynolds/remy-fl.git"
+BRANCH="ai-midi-gen-plugin"
 DIR="$HOME/ai-midi-gen"
 
 say()  { printf "\n\033[1;36m==> %s\033[0m\n" "$*"; }
@@ -49,7 +53,7 @@ elif [ -d "$DIR/src" ]; then
   say "Using existing source in $DIR (no git remote)…"
 else
   say "Cloning source into $DIR…"
-  git clone "$REPO" "$DIR"
+  git clone -b "$BRANCH" --single-branch "$REPO" "$DIR"
 fi
 
 # ------------------------------------------------------------------ 4. build
