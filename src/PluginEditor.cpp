@@ -29,16 +29,9 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
     headerLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt1);
     addAndMakeVisible (headerLabel);
 
-    subheaderLabel.setText ("Agent workspace", juce::dontSendNotification);
-    subheaderLabel.setFont (CustomLookAndFeel::font (12.0f));
-    subheaderLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
-    addAndMakeVisible (subheaderLabel);
-
     apiStatusLabel.setFont (CustomLookAndFeel::font (11.5f));
     apiStatusLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
     addAndMakeVisible (apiStatusLabel);
-
-    meterValueLabel.setVisible (false);
 
     bpmLabel.setFont (CustomLookAndFeel::font (11.0f, juce::Font::bold));
     bpmLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
@@ -1274,7 +1267,6 @@ void AIMidiGenEditor::refreshPanels()
     chatPanel.setModelLabel (processor.ai().getProvider() == AIClient::Provider::OpenAI
                                  ? processor.ai().getOpenAiModel()
                                  : processor.ai().getClaudeModel());
-    meterValueLabel.setText (juce::String (readyParts) + "/7", juce::dontSendNotification);
     refreshBpmLabel();
     refreshSoundControls();
     refreshChordDashboard();
@@ -1312,8 +1304,6 @@ void AIMidiGenEditor::resized()
     // ---- Header strip: logo + tabs left, API status right ----
     auto header = r.removeFromTop (46).reduced (12, 7);
     headerLabel.setBounds (header.removeFromLeft (110));
-    header.removeFromLeft (6);
-    subheaderLabel.setBounds (header.removeFromLeft (110));
     header.removeFromLeft (10);
 
     generateTabButton.setBounds (header.removeFromLeft (92).withSizeKeepingCentre (92, 30));
@@ -1352,9 +1342,6 @@ void AIMidiGenEditor::resized()
     browseSurface.setBounds (r);
     chatSurface.setBounds (r);
     settingsSurface.setBounds (r);
-
-    // Hide the old dial label
-    meterValueLabel.setBounds ({});
 
     layoutGenerateSurface();
     layoutBrowseSurface();

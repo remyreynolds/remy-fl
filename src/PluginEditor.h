@@ -67,9 +67,7 @@ private:
     juce::TextButton settingsTabButton { "⚙" };
 
     juce::Label   headerLabel;
-    juce::Label   subheaderLabel;
     juce::Label   apiStatusLabel;
-    juce::Label   meterValueLabel;
     juce::Label   bpmLabel { {}, "BPM" };
     juce::Label   bpmValue;
     juce::TextButton bpmMinus { "−" };
