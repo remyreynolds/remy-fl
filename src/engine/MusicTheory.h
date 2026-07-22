@@ -56,13 +56,14 @@ namespace theory
         return octave * 12 + ((rootPc + best) % 12);
     }
 
-    // Build a chord (triad or 7th) rooted on a scale degree, in-key.
+    // Build a stacked-thirds chord rooted on a scale degree, in-key.
+    // tones: 3 = triad, 4 = 7th, 5 = 9th, 6 = 11th.
     inline std::vector<int> diatonicChord (int rootMidi, int rootPc,
                                            const std::vector<int>& intervals,
-                                           int degree, bool seventh)
+                                           int degree, int tones = 3)
     {
         std::vector<int> notes;
-        const int steps = seventh ? 4 : 3;
+        const int steps = tones < 3 ? 3 : (tones > 6 ? 6 : tones);
         const int baseOctave = (rootMidi / 12) * 12; // strip pitch class, keep octave
         for (int i = 0; i < steps; ++i)
         {
