@@ -10,9 +10,9 @@ from pathlib import Path
 from typing import Any, Iterable
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_DB = REPO_ROOT / "data" / "style_library.db"
+DEFAULT_DB = REPO_ROOT / "brain" / "3-memory" / "style_library.db"
 MIGRATION = Path(__file__).with_name("migrations") / "001_cognitive_memory.sql"
-SEED_DIR = REPO_ROOT / "seeds"
+SEED_DIR = REPO_ROOT / "brain" / "1-knowledge"
 
 
 SUBGENRE_ALIASES = {

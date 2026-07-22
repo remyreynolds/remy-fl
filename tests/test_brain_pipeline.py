@@ -138,7 +138,7 @@ def test_stems_written(tmp_path):
 def test_seed_fingerprints(tmp_path):
     db = tmp_path / "t.db"
     lib = StyleLibrary(db)
-    seeds = json.loads((ROOT / "seeds" / "fingerprints.json").read_text())
+    seeds = json.loads((ROOT / "brain" / "1-knowledge" / "fingerprints.json").read_text())
     n = lib.seed_fingerprints(seeds, replace=True)
     assert n >= 15
     hits = lib.retrieve_fingerprints(subgenre="tech house", limit=3)
@@ -221,7 +221,7 @@ SUBGENRE_REQUESTS = [
 def test_live_or_offline_eight_subgenres(tmp_path):
     pipe = AgentPipeline(out_dir=tmp_path / "subs")
     lib = StyleLibrary(tmp_path / "s.db")
-    seeds = json.loads((ROOT / "seeds" / "fingerprints.json").read_text())
+    seeds = json.loads((ROOT / "brain" / "1-knowledge" / "fingerprints.json").read_text())
     lib.seed_fingerprints(seeds, replace=True)
     pipe.library = lib
 

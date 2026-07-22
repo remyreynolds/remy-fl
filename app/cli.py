@@ -24,7 +24,7 @@ def main(argv=None):
         return 0
     if args.consolidate:
         result = Consolidator(library).run(
-            Path(__file__).resolve().parents[1] / "brain_report.md"
+            Path(__file__).resolve().parents[1] / "brain" / "3-memory" / "brain_report.md"
         )
         print(json.dumps(result, indent=2))
         return 0

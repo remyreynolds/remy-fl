@@ -9,7 +9,7 @@ from app.memory import CognitiveMemory
 
 
 def generate_report(output: Path | None = None) -> Path:
-    target = output or Path(__file__).resolve().parents[1] / "brain_report.md"
+    target = output or Path(__file__).resolve().parents[1] / "brain" / "3-memory" / "brain_report.md"
     with tempfile.TemporaryDirectory(prefix="midi-brain-week-") as directory:
         memory = CognitiveMemory(Path(directory) / "week.db")
         fingerprints = memory.retrieve_fingerprints(

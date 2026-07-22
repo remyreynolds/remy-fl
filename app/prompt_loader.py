@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_PROMPT_PATH = REPO_ROOT / "prompts" / "house-midi-agent-master-prompt.md"
+DEFAULT_PROMPT_PATH = REPO_ROOT / "brain" / "2-prompts" / "house-midi-agent-master-prompt.md"
 
 
 class PromptLoadError(FileNotFoundError):
@@ -17,7 +17,7 @@ def load_brain_prompt(path: Path | None = None) -> str:
     if not prompt_path.exists():
         raise PromptLoadError(
             f"Brain prompt missing: {prompt_path}. "
-            "Expected prompts/house-midi-agent-master-prompt.md"
+            "Expected brain/2-prompts/house-midi-agent-master-prompt.md"
         )
     text = prompt_path.read_text(encoding="utf-8").strip()
     if not text:
