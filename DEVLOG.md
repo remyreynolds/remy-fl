@@ -159,3 +159,43 @@ the lanes that are actually hot right now.
   and a sanity harness verifies: 8 styles, valid bpm/swing/progressions,
   kick patterns present, chord builds per style scale, keyword lookups, and
   the 10-piece GM mapping. Full JUCE build still happens on the Mac.
+
+---
+
+## Phase 1.4 — Song plan, critic, MIDI DNA (2026-07-22)
+
+Closed the four real gaps from the arrangement critique: lanes could
+disagree harmonically, nothing reviewed the arrangement as a whole, MIDI
+packs were audition-only, and style choice gave no sound-design guidance.
+
+### Added
+- `engine/SongPlan.h` (JUCE-free): ONE deterministic harmonic skeleton per
+  MusicParams — progression from the style preset, chords voice-led bar to
+  bar (close-position around the previous chord's centre via new
+  `theory::voiceLead`). Chords, pad, arp, and the critic all derive from
+  the same plan, so separately-generated lanes can never disagree about
+  the harmony. Only rhythm/feel uses the RNG.
+- `engine/Critic.h` (JUCE-free): cross-part review + repair that runs after
+  EVERY generation path (manual button, style switch, drum reroll, AI
+  chat) — melody/counter-melody strong beats snapped to chord tones, bass
+  clamped to E1..G3, bass notes nudged a 1/16 off kick hits for busy bass
+  styles (sustained-sub/garage keep their downbeats), dense chord stacks
+  flagged. Locked lanes are never touched. Summary posted to the chat
+  panel so the user sees what was repaired.
+- `engine/MidiDna.h/.cpp`: "MIDI packs as DNA". Load MIDI DNA button →
+  analyze a .mid: channel-10 onsets become per-piece 16-step grooves that
+  override the style preset for the pieces the loop covers; pitched notes
+  vote a root + scale (major/minor/dorian, pitch-class weighted) which is
+  adopted into the project key. Analysis only — the file's notes are never
+  copied. Unlocked parts regenerate immediately with the learned feel.
+- `MidiGenerator`: turnaround fills every 4th bar (velocity-ramped snare or
+  clap on steps 13–16); hat/shaker/ride density now scales with the energy
+  dial; DNA groove override in `generateDrumKit`.
+- Style switch now posts the preset's recommended patches/kits ("Sound
+  picks: …") to chat — the MIDI-first answer to "default kits per style":
+  final tone lives in the DAW, so we tell the producer what to load there.
+
+### Validation
+- g++ harness extended: SongPlan determinism + voice-leading distance,
+  chordAtBeat clamping, critic repairs (chord-tone snap, bass clamp, kick
+  clash nudge) and lock-respect — all green on Linux. JUCE build on Mac.

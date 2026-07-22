@@ -1,5 +1,7 @@
 #include "MidiGenerator.h"
+#include "MidiDna.h"
 #include "MusicTheory.h"
+#include "SongPlan.h"
 #include <algorithm>
 #include <cmath>
 
@@ -52,15 +54,14 @@ GeneratedPart MidiGenerator::generateChordsWithMode (const MusicParams& p,
                                                      ChordMode mode, int tones)
 {
     GeneratedPart part;
-    const auto& st    = findStyle (p.genre);
-    const int rootPc  = rootPitchClass (p.root);
-    const auto ivals  = scaleIntervals (p.scale);
-    const int base    = 12 * (p.octave) + rootPc; // e.g. octave 4 -> ~C4 region
+
+    // All harmony comes from the shared song plan — the same deterministic
+    // skeleton bass/arp/melody/critic use, with bar-to-bar voice-leading.
+    const auto plan = buildSongPlan (p, tones);
 
     for (int bar = 0; bar < p.bars; ++bar)
     {
-        const int deg = st.progression[(size_t) (bar % 4)];
-        auto chord = theory::diatonicChord (base, rootPc, ivals, deg, tones);
+        const auto& chord = plan.chords[(size_t) bar];
         const double b0 = bar * 4.0;
 
         switch (mode)
@@ -215,23 +216,22 @@ GeneratedPart MidiGenerator::generateMelody (const MusicParams& p)
 GeneratedPart MidiGenerator::generateArp (const MusicParams& p)
 {
     GeneratedPart part;
-    const int rootPc = rootPitchClass (p.root);
-    const auto ivals = scaleIntervals (p.scale);
-    const int base   = 12 * (p.octave + 1) + rootPc;
 
-    // Arp follows the style's chord progression: each bar arpeggiates the
-    // chord of that bar (root/3rd/5th/7th climbing, octave alternation).
+    // Arp climbs the voice-led chord of the current bar (from the shared
+    // song plan) with octave alternation — always consonant with the other
+    // lanes by construction. Sits one octave above the chord register.
     const auto& st = findStyle (p.genre);
-    const int offsets[] = { 0, 2, 4, 6 };
+    const auto plan = buildSongPlan (p, st.chordTones);
     const double step = 0.25; // 1/16 arp
     const int totalSteps = (int) std::round ((p.bars * 4.0) / step);
     for (int s = 0; s < totalSteps; ++s)
     {
-        const int bar  = (int) (s * step / 4.0);
-        const int deg  = st.progression[(size_t) (bar % 4)] + offsets[s % 4];
-        const int oct  = (s / 4) % 2 + deg / (int) ivals.size();
-        const int note = base + oct * 12 + ivals[(size_t) (deg % (int) ivals.size())];
-        part.notes.push_back ({ s * step, step * 0.9, note, 0.7f });
+        const int bar     = (int) (s * step / 4.0);
+        const auto& chord = plan.chords[(size_t) std::min (bar, (int) plan.chords.size() - 1)];
+        if (chord.empty()) continue;
+        const int idx = s % (int) chord.size();
+        const int oct = 12 + ((s / (int) chord.size()) % 2) * 12;
+        part.notes.push_back ({ s * step, step * 0.9, chord[(size_t) idx] + oct, 0.7f });
     }
     return part;
 }
@@ -280,8 +280,26 @@ std::array<GeneratedPart, (size_t) DrumPiece::NumPieces>
     for (int pieceIdx = 0; pieceIdx < (int) DrumPiece::NumPieces; ++pieceIdx)
     {
         const auto piece   = (DrumPiece) pieceIdx;
-        const auto& pat    = st.drums[(size_t) pieceIdx];
         const int midiNote = drumPieceMidiNote (piece);
+
+        // MIDI-pack DNA: when the user loaded a reference MIDI file, its
+        // extracted groove replaces the preset pattern for any piece the
+        // reference actually plays; pieces it doesn't cover keep the style.
+        const DrumPattern* patPtr = &st.drums[(size_t) pieceIdx];
+        DrumPattern dnaPat;
+        if (dna != nullptr && dna->hasDrums)
+        {
+            bool any = false;
+            for (float v : dna->drumSteps[(size_t) pieceIdx])
+                if (v > 0.0f) { any = true; break; }
+            if (any)
+            {
+                dnaPat.steps = dna->drumSteps[(size_t) pieceIdx];
+                dnaPat.probability = 0.95f;
+                patPtr = &dnaPat;
+            }
+        }
+        const auto& pat = *patPtr;
 
         // Hats and shakers get denser with the energy dial; core pieces
         // (kick/snare/clap) stay rock solid.
@@ -303,6 +321,30 @@ std::array<GeneratedPart, (size_t) DrumPiece::NumPieces>
                                               0.05f, 1.0f);
                 kit[(size_t) pieceIdx].notes.push_back (
                     { b0 + s * 0.25, 0.15, midiNote, vel });
+            }
+        }
+    }
+
+    // Turnaround fill: last beat of every 4th bar gets a velocity-ramped
+    // 16th run on the snare (or clap, for styles with no snare pattern) —
+    // real sub-genre identity needs phrase punctuation, not endless loops.
+    {
+        bool styleHasSnare = false;
+        for (float v : st.drums[(size_t) DrumPiece::Snare].steps)
+            if (v > 0.0f) { styleHasSnare = true; break; }
+
+        const auto fillPiece = styleHasSnare ? DrumPiece::Snare : DrumPiece::Clap;
+        const int fillNote   = drumPieceMidiNote (fillPiece);
+
+        for (int bar = 3; bar < p.bars; bar += 4)
+        {
+            const double b0 = bar * 4.0;
+            for (int s = 12; s < 16; ++s)
+            {
+                if (rand01() > 0.5f + p.energy * 0.4f) continue;
+                const float vel = 0.35f + 0.13f * (float) (s - 12); // ramp up
+                kit[(size_t) fillPiece].notes.push_back (
+                    { b0 + s * 0.25, 0.12, fillNote, vel });
             }
         }
     }

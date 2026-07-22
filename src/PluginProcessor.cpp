@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "engine/Critic.h"
 #include <algorithm>
 
 namespace aimidi
@@ -35,6 +36,7 @@ void AIMidiGenProcessor::generatePart (InstrumentType t)
     auto& p = parts[(size_t) t];
     if (p.locked) return;
     p = generator.generate (t, projectParams);
+    runCritic();
     rebuildPreviewSequences();
 }
 
@@ -63,6 +65,7 @@ void AIMidiGenProcessor::regenerateFromAI (const juce::String& prompt,
                         parts[(size_t) t] = generator.generate (t, projectParams);
                 }
 
+                runCritic();
                 rebuildPreviewSequences();
             }
             if (onDone) onDone (r);
@@ -77,6 +80,7 @@ void AIMidiGenProcessor::generateDrumKit()
         if (! drumKit[i].locked)
             drumKit[i] = fresh[i];
 
+    runCritic();
     rebuildDrumMasterPart();
     rebuildPreviewSequences();
 }
@@ -87,8 +91,51 @@ void AIMidiGenProcessor::generateDrumPiece (DrumPiece dp)
     if (piece.locked) return;
     piece = generator.generateDrumPiece (dp, projectParams);
 
+    runCritic();
     rebuildDrumMasterPart();
     rebuildPreviewSequences();
+}
+
+void AIMidiGenProcessor::runCritic()
+{
+    // Arrangement-level review + repair (chord-tone strong beats, bass
+    // register, kick/bass clashes). Locked lanes are skipped inside the
+    // critic itself. Runs after EVERY generation path — manual, style
+    // switch, drum-piece reroll, or AI chat — so nothing unchecked lands
+    // in the roll.
+    auto rep = reviewArrangement (parts, drumKit, projectParams);
+    criticSummary = juce::String (rep.summary());
+}
+
+//==============================================================================
+juce::String AIMidiGenProcessor::loadDna (const juce::File& midiFile)
+{
+    dna = MidiDna::analyzeFile (midiFile);
+    generator.setDna (dna.valid ? &dna : nullptr);
+
+    if (! dna.valid)
+        return dna.describe();
+
+    // Harmony learned from the pack becomes the project key (the drums
+    // side is picked up automatically by the generator via setDna).
+    if (dna.hasHarmony)
+    {
+        static const char* pcNames[] = { "C","C#","D","D#","E","F",
+                                         "F#","G","G#","A","A#","B" };
+        projectParams.root  = pcNames[dna.rootPc % 12];
+        projectParams.scale = dna.scale;
+    }
+
+    // Regenerate everything that isn't locked so the DNA takes effect now.
+    for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
+    {
+        if ((InstrumentType) t == InstrumentType::Drums) continue;
+        if (! parts[(size_t) t].locked)
+            parts[(size_t) t] = generator.generate ((InstrumentType) t, projectParams);
+    }
+    generateDrumKit(); // runs the critic + rebuilds previews internally
+
+    return dna.describe();
 }
 
 void AIMidiGenProcessor::rebuildDrumMasterPart()

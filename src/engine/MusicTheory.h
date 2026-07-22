@@ -1,6 +1,8 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
+#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -73,6 +75,54 @@ namespace theory
             notes.push_back (baseOctave + oct * 12 + ((rootPc + iv) % 12));
         }
         return notes;
+    }
+    /** Re-voice `next` so it sits as close as possible to the previous
+        chord's register (close-position voicing around the previous centre).
+        Classic cheap voice-leading: minimizes hand movement between chords. */
+    inline std::vector<int> voiceLead (const std::vector<int>& prev, std::vector<int> next)
+    {
+        if (prev.empty() || next.empty()) return next;
+
+        double target = 0.0;
+        for (int n : prev) target += n;
+        target /= (double) prev.size();
+
+        for (auto& n : next)
+        {
+            while (n - target > 6.0)  n -= 12;
+            while (target - n > 6.0)  n += 12;
+        }
+
+        std::sort (next.begin(), next.end());
+        next.erase (std::unique (next.begin(), next.end()), next.end());
+        return next;
+    }
+
+    /** True if the note's pitch class is one of the chord's pitch classes. */
+    inline bool isChordTone (int midiNote, const std::vector<int>& chord)
+    {
+        for (int c : chord)
+            if ((c % 12) == (midiNote % 12))
+                return true;
+        return false;
+    }
+
+    /** Snap a note to the nearest chord tone (keeps register). */
+    inline int snapToChord (int midiNote, const std::vector<int>& chord)
+    {
+        if (chord.empty()) return midiNote;
+        int best = midiNote, bestDist = 128;
+        for (int c : chord)
+        {
+            const int pc = c % 12;
+            for (int oct = (midiNote / 12) - 1; oct <= (midiNote / 12) + 1; ++oct)
+            {
+                const int cand = oct * 12 + pc;
+                const int d = std::abs (cand - midiNote);
+                if (d < bestDist) { bestDist = d; best = cand; }
+            }
+        }
+        return best;
     }
 } // namespace theory
 } // namespace aimidi

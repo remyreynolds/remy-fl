@@ -44,6 +44,7 @@ target_sources(AIMidiGen PRIVATE
     src/PluginProcessor.cpp
     src/PluginEditor.cpp
     src/ai/AIClient.cpp
+    src/engine/MidiDna.cpp
     src/engine/MidiGenerator.cpp
     src/gui/ChatPanel.cpp
     src/gui/InstrumentPanel.cpp

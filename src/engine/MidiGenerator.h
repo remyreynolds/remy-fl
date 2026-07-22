@@ -8,6 +8,8 @@
 
 namespace aimidi
 {
+struct MidiDna; // engine/MidiDna.h — groove/harmony learned from a MIDI file
+
 /** Turns MusicParams into validated, in-key NoteEvents per instrument, and
     bakes them into a juce::MidiMessageSequence for playback / export / drag.
 
@@ -48,7 +50,15 @@ public:
 
     static constexpr int ticksPerQuarter = 960;
 
+    /** Point the generator at MIDI-pack DNA (or nullptr to clear). The DNA
+        object must outlive the generator's use of it (the processor owns
+        both). Covered pieces adopt the reference groove; the rest keep the
+        style preset. */
+    void setDna (const MidiDna* d) { dna = d; }
+
 private:
+    const MidiDna* dna = nullptr;
+
     GeneratedPart generateChords (const MusicParams&);
     GeneratedPart generateChordsWithMode (const MusicParams&, ChordMode, int tones);
     GeneratedPart generateBass   (const MusicParams&);

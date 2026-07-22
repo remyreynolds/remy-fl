@@ -2,6 +2,7 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "engine/MidiGenerator.h"
+#include "engine/MidiDna.h"
 #include "ai/AIClient.h"
 #include <array>
 
@@ -63,6 +64,16 @@ public:
 
     AIClient& ai() { return aiClient; }
 
+    // ---- MIDI-pack DNA: learn groove + harmony from a user MIDI file. ----
+    /** Analyze the file, adopt its groove/harmony for future generation,
+        regenerate unlocked parts, and return a human-readable report for
+        the chat panel. */
+    juce::String loadDna (const juce::File& midiFile);
+    bool hasDna() const { return dna.valid; }
+
+    // ---- Cross-part critic: runs after every generation path. ----
+    const juce::String& lastCriticSummary() const { return criticSummary; }
+
 private:
     MusicParams projectParams;
     std::array<GeneratedPart, (size_t) InstrumentType::NumTypes> parts;
@@ -70,6 +81,11 @@ private:
 
     MidiGenerator generator;
     AIClient      aiClient;
+
+    MidiDna dna;                 // groove/harmony learned from a MIDI pack
+    juce::String criticSummary;  // what the critic did on the last pass
+
+    void runCritic();            // review + repair the arrangement in place
 
     // --- preview playback ---
     std::atomic<bool> previewing { false };

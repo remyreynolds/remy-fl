@@ -48,6 +48,25 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
     };
     addAndMakeVisible (previewButton);
 
+    // MIDI-pack DNA: drop in a loop you love and generation inherits its
+    // groove + key. Analysis only — the loop's notes are never copied.
+    dnaButton.onClick = [this]
+    {
+        dnaChooser = std::make_unique<juce::FileChooser> (
+            "Pick a MIDI loop to learn from", juce::File{}, "*.mid;*.midi");
+        dnaChooser->launchAsync (juce::FileBrowserComponent::openMode
+                               | juce::FileBrowserComponent::canSelectFiles,
+            [this] (const juce::FileChooser& fc)
+            {
+                const auto f = fc.getResult();
+                if (f == juce::File{}) return;
+                chatPanel.addAssistantMessage (processor.loadDna (f));
+                chatPanel.addAssistantMessage (processor.lastCriticSummary());
+                refreshPanels();
+            });
+    };
+    addAndMakeVisible (dnaButton);
+
     apiKeyLabel.setFont (CustomLookAndFeel::font (11.5f, juce::Font::bold));
     apiKeyLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::muted);
     addAndMakeVisible (apiKeyLabel);
@@ -178,6 +197,13 @@ void AIMidiGenEditor::applyStylePreset (int styleIndex)
 
     for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
         processor.generatePart ((InstrumentType) t);
+
+    // MIDI-first "default kit": tell the producer which patches make this
+    // style sound the part in their DAW, instead of pretending our preview
+    // synth is club-ready.
+    chatPanel.addAssistantMessage (juce::String (st.name) + " loaded — "
+        + juce::String (st.vibe) + "\nSound picks: " + juce::String (st.sounds));
+
     refreshPanels();
 }
 
@@ -203,6 +229,8 @@ void AIMidiGenEditor::handlePrompt (const juce::String& prompt)
             if (r.error.isNotEmpty())
                 chatPanel.addAssistantMessage ("⚠ " + r.error);
             chatPanel.addAssistantMessage (r.assistantText);
+            if (r.ok && processor.lastCriticSummary().isNotEmpty())
+                chatPanel.addAssistantMessage (processor.lastCriticSummary());
             refreshPanels();
         });
 }
@@ -266,6 +294,8 @@ void AIMidiGenEditor::resized()
     generateAllButton.setBounds (topLine.removeFromRight (118));
     topLine.removeFromRight (8);
     previewButton.setBounds (topLine.removeFromRight (112));
+    topLine.removeFromRight (8);
+    dnaButton.setBounds (topLine.removeFromRight (juce::jmin (120, topLine.getWidth())));
 
     subheaderLabel.setBounds (header.removeFromTop (20));
     header.removeFromTop (7);

@@ -35,6 +35,8 @@ private:
     juce::Label   apiStatusLabel;
     juce::TextButton previewButton { "Preview All" };
     juce::TextButton generateAllButton { "Generate All" };
+    juce::TextButton dnaButton { "Load MIDI DNA" };
+    std::unique_ptr<juce::FileChooser> dnaChooser;
     juce::TextEditor apiKeyField;
     juce::Label   apiKeyLabel { {}, "Claude API key:" };
     juce::Label   styleLabel  { {}, "Style:" };

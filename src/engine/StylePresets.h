@@ -85,6 +85,8 @@ struct StylePreset
 {
     const char* name;      // exact display / AI-facing name
     const char* keywords;  // lowercase aliases & artist cues, comma-separated
+    const char* sounds;    // recommended patches/kits — final tone lives in
+                           // the DAW, so we guide instead of synthesize
     const char* vibe;      // one-liner used in the AI system prompt + UI
     double bpm;
     float  swing;          // 0..1
@@ -128,6 +130,7 @@ inline const std::vector<StylePreset>& allStyles()
     {
         { "Tech House",
           "tech house,tech-house,techhouse,john summit,fisher,toolroom,hot creations,rolling",
+          "Bass: Serum/Vital growly sub · Chords: dark analog stab (Diva) · Kit: punchy 909-style, tight claps",
           "Rolling 16th bassline, tight punchy drums, sparse dark stabs (John Summit / FISHER lane)",
           126.0, 0.12f, "minor", 4, ChordMode::Stabs, BassStyle::RollingSixteenths,
           { 0, 0, 5, 3 },
@@ -143,6 +146,7 @@ inline const std::vector<StylePreset>& allStyles()
 
         { "Bass House",
           "bass house,basshouse,chris lake,night bass,g-house",
+          "Bass: heavy wobble/talk bass (Serum) · Chords: minimal dark keys · Kit: hard-hitting house kit",
           "Heavy offbeat bass energy, minimal dark chords, hard drums (Chris Lake lane)",
           128.0, 0.08f, "minor", 3, ChordMode::Stabs, BassStyle::OffbeatEighths,
           { 0, 0, 0, 5 },
@@ -158,6 +162,7 @@ inline const std::vector<StylePreset>& allStyles()
 
         { "Afro House",
           "afro,afro house,keinemusik,black coffee,&me,rampa,tribal,adam port",
+          "Bass: warm round sub · Keys: Rhodes/mallets or organic pluck · Kit: live congas, shakers, log drums",
           "Organic tribal percussion (congas, shakers), emotive 9th chords, syncopated bass (Keinemusik / Black Coffee lane)",
           120.0, 0.22f, "minor", 5, ChordMode::Sustained, BassStyle::StabSyncopated,
           { 0, 3, 5, 4 },
@@ -174,6 +179,7 @@ inline const std::vector<StylePreset>& allStyles()
 
         { "Melodic House",
           "melodic,melodic house,melodic techno,anyma,artbat,afterlife,tale of us,progressive",
+          "Arp: analog saw pluck w/ delay · Pad: wide Juno/Diva strings · Kit: clean techno kit, soft claps",
           "Driving arps, big emotional pads, hypnotic minor progressions (Anyma / ARTBAT lane)",
           124.0, 0.05f, "minor", 4, ChordMode::Sustained, BassStyle::OffbeatEighths,
           { 0, 5, 3, 6 },
@@ -189,6 +195,7 @@ inline const std::vector<StylePreset>& allStyles()
 
         { "Deep House",
           "deep,deep house,warm,dusky,late night",
+          "Chords: Rhodes/EP with chorus · Bass: deep sine/moog sub · Kit: dusty MPC-style kit, vinyl swing",
           "Warm m9/m11 chords, deep sub bass, smoky swung hats",
           122.0, 0.18f, "minor", 5, ChordMode::OffbeatStabs, BassStyle::SubSustained,
           { 0, 5, 3, 4 },
@@ -204,6 +211,7 @@ inline const std::vector<StylePreset>& allStyles()
 
         { "Organic House",
           "organic,organic house,lane 8,ben bohmer,böhmer,anjunadeep,downtempo,sunset",
+          "Keys: felt piano/kalimba plucks · Pad: airy granular · Kit: hand percussion, soft foley hits",
           "Mellow downtempo grooves, hand percussion, plucked chords (Lane 8 / Anjunadeep lane)",
           118.0, 0.20f, "dorian", 5, ChordMode::Plucked, BassStyle::SubSustained,
           { 0, 2, 5, 3 },
@@ -220,6 +228,7 @@ inline const std::vector<StylePreset>& allStyles()
 
         { "UK Garage",
           "garage,uk garage,ukg,2-step,2 step,speed garage,bassline,interplanetary",
+          "Bass: warping reese/sub (Serum FM) · Chords: filtered vocal-chop keys · Kit: crisp UKG kit, shuffled",
           "Shuffled 2-step drums, skipping hats, warping sub bass (speed-garage revival lane)",
           132.0, 0.35f, "minor", 5, ChordMode::Stabs, BassStyle::GarageSub,
           { 0, 5, 3, 6 },
@@ -235,6 +244,7 @@ inline const std::vector<StylePreset>& allStyles()
 
         { "Classic House",
           "classic,classic house,piano,piano house,90s,gospel,disco,french",
+          "Chords: bright piano/M1 organ · Bass: plucky analog octave bass · Kit: classic 909, big claps",
           "90s piano-house energy: gospel 7th stabs on the offbeats, disco-loop drums",
           124.0, 0.15f, "major", 4, ChordMode::OffbeatStabs, BassStyle::OffbeatEighths,
           { 0, 4, 5, 3 },
