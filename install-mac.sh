@@ -2,7 +2,7 @@
 # ============================================================================
 # AI MIDI Gen — one-command macOS build & install
 #
-#   bash <(curl -fsSL https://raw.githubusercontent.com/remyreynolds/ai-midi-gen/main/install-mac.sh)
+#   bash <(curl -fsSL https://raw.githubusercontent.com/remyreynolds/remy-fl/ai-midi-gen-plugin/install-mac.sh)
 #
 # What it does (all automatic):
 #   1. Makes sure the compiler (Xcode Command Line Tools) is installed
