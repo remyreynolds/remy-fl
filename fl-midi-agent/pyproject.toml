@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fl-midi-agent-relay"
+version = "0.1.0"
+description = "Local bridge between FL Studio piano-roll scripts and the MIDI Agent brain"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi",
+  "httpx",
+  "uvicorn",
+  "watchdog",
+  "python-multipart",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.scripts]
+midiagent-relay = "relay.cli:main"
+
+[tool.setuptools]
+packages = ["relay", "flscript"]
+
+[tool.setuptools.package-data]
+flscript = ["*.pyscript"]
+relay = ["static/*", "static/assets/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+

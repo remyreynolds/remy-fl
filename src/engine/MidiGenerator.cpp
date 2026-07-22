@@ -281,7 +281,7 @@ int MidiGenerator::validate (GeneratedPart& part, const MusicParams& p)
 juce::MidiMessageSequence MidiGenerator::toSequence (const GeneratedPart& part, double /*bpm*/)
 {
     juce::MidiMessageSequence seq;
-    const int ch = part.type == InstrumentType::Drums ? 10 : 1;
+    const int ch = midiChannelFor (part.type);
 
     for (const auto& n : part.notes)
     {
@@ -315,6 +315,47 @@ juce::File MidiGenerator::writeTempMidiFile (const GeneratedPart& part,
     dir.createDirectory();
     auto file = dir.getChildFile (baseName + "_" +
                     juce::String (juce::Time::currentTimeMillis()) + ".mid");
+
+    if (auto out = std::unique_ptr<juce::FileOutputStream> (file.createOutputStream()))
+    {
+        out->setPosition (0);
+        out->truncate();
+        mf.writeTo (*out);
+        out->flush();
+    }
+    return file;
+}
+
+juce::File MidiGenerator::writeTempMultiTrackMidiFile (
+    const std::vector<const GeneratedPart*>& parts,
+    const MusicParams& params,
+    const juce::String& baseName)
+{
+    juce::MidiFile mf;
+    mf.setTicksPerQuarterNote (ticksPerQuarter);
+
+    juce::MidiMessageSequence tempo;
+    tempo.addEvent (juce::MidiMessage::tempoMetaEvent (
+        (int) std::round (60'000'000.0 / params.bpm)), 0.0);
+    tempo.addEvent (juce::MidiMessage::textMetaEvent (3, "AI MIDI Gen"), 0.0);
+    mf.addTrack (tempo);
+
+    for (auto* part : parts)
+    {
+        if (part == nullptr || part->notes.empty())
+            continue;
+
+        auto seq = toSequence (*part, params.bpm);
+        seq.addEvent (juce::MidiMessage::textMetaEvent (3, toString (part->type)), 0.0);
+        seq.updateMatchedPairs();
+        mf.addTrack (seq);
+    }
+
+    auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                   .getChildFile ("AIMidiGen");
+    dir.createDirectory();
+    auto file = dir.getChildFile (baseName + "_" +
+                                  juce::String (juce::Time::currentTimeMillis()) + ".mid");
 
     if (auto out = std::unique_ptr<juce::FileOutputStream> (file.createOutputStream()))
     {

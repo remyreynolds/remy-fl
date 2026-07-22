@@ -1,0 +1,12 @@
+[llm]
+provider = "anthropic"
+small_model = "claude-haiku-4-5"
+mid_model = "claude-sonnet-5"
+strong_model = "claude-sonnet-5"
+timeout_seconds = 90
+max_calls_per_request = 7
+
+[brain]
+context_token_budget = 2500
+max_revision_loops = 2
+

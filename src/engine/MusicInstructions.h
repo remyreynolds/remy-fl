@@ -66,6 +66,22 @@ inline int drumPieceMidiNote (DrumPiece p)
     }
 }
 
+/** Preview synth routes each pitched part on its own channel. */
+inline int midiChannelFor (InstrumentType t)
+{
+    switch (t)
+    {
+        case InstrumentType::Melody:        return 1;
+        case InstrumentType::Chords:        return 2;
+        case InstrumentType::Bass:          return 3;
+        case InstrumentType::CounterMelody: return 4;
+        case InstrumentType::Arp:           return 5;
+        case InstrumentType::Pad:           return 6;
+        case InstrumentType::Drums:         return 10;
+        default:                            return 1;
+    }
+}
+
 /** High-level musical parameters. These come from the UI controls AND/OR
     are filled in by the AI when it parses the prompt. */
 struct MusicParams
@@ -89,6 +105,14 @@ struct MusicParams
     // seed for reproducible-but-varied regeneration
     unsigned int seed = 0;
 };
+
+/** Display / prompt key, e.g. "F minor". */
+inline std::string formatKeyString (const MusicParams& p)
+{
+    std::string scale = p.scale;
+    if (scale == "harmonicMinor") scale = "minor";
+    return p.root + " " + scale;
+}
 
 /** One note event, pre-MIDI, in beats. */
 struct NoteEvent

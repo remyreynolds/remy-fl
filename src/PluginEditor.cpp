@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "engine/ChordAnalysis.h"
 
 namespace aimidi
 {
@@ -9,50 +10,388 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
     setLookAndFeel (&lnf);
 
     headerLabel.setText ("AI MIDI Gen", juce::dontSendNotification);
-    headerLabel.setFont (CustomLookAndFeel::font (22.0f, juce::Font::bold));
+    headerLabel.setFont (CustomLookAndFeel::font (16.0f, juce::Font::bold));
+    headerLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt1);
     addAndMakeVisible (headerLabel);
 
-    subheaderLabel.setText ("Claude-powered MIDI workspace for FL Studio", juce::dontSendNotification);
-    subheaderLabel.setFont (CustomLookAndFeel::font (12.5f));
-    subheaderLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::muted);
+    subheaderLabel.setText ("Agent workspace", juce::dontSendNotification);
+    subheaderLabel.setFont (CustomLookAndFeel::font (12.0f));
+    subheaderLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
     addAndMakeVisible (subheaderLabel);
 
-    meterLabel.setText ("Parts ready", juce::dontSendNotification);
-    meterLabel.setFont (CustomLookAndFeel::font (11.5f, juce::Font::bold));
-    meterLabel.setJustificationType (juce::Justification::centred);
-    meterLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::muted);
-    addAndMakeVisible (meterLabel);
-
-    meterValueLabel.setFont (CustomLookAndFeel::font (18.0f, juce::Font::bold));
-    meterValueLabel.setJustificationType (juce::Justification::centred);
-    addAndMakeVisible (meterValueLabel);
-
     apiStatusLabel.setFont (CustomLookAndFeel::font (11.5f));
-    apiStatusLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::muted);
+    apiStatusLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
     addAndMakeVisible (apiStatusLabel);
 
-    generateAllButton.onClick = [this]
+    meterValueLabel.setVisible (false);
+
+    bpmLabel.setFont (CustomLookAndFeel::font (11.0f, juce::Font::bold));
+    bpmLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
+    bpmLabel.setJustificationType (juce::Justification::centred);
+    addAndMakeVisible (bpmLabel);
+
+    bpmValue.setFont (CustomLookAndFeel::font (13.0f, juce::Font::bold));
+    bpmValue.setColour (juce::Label::textColourId, CustomLookAndFeel::txt1);
+    bpmValue.setJustificationType (juce::Justification::centred);
+    bpmValue.setEditable (true, true, false);
+    bpmValue.onTextChange = [this]
     {
-        for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
-            processor.generatePart ((InstrumentType) t);
-        refreshPanels();
+        const int v = bpmValue.getText().retainCharacters ("0123456789").getIntValue();
+        if (v > 0)
+        {
+            processor.setBpm ((double) v);
+            refreshBpmLabel();
+        }
     };
+    addAndMakeVisible (bpmValue);
+
+    bpmMinus.onClick = [this] { nudgeBpm (-1); };
+    bpmPlus.onClick  = [this] { nudgeBpm (+1); };
+    addAndMakeVisible (bpmMinus);
+    addAndMakeVisible (bpmPlus);
+    refreshBpmLabel();
+
+    generateAllButton.setComponentID ("primary");
+    generateAllButton.setTooltip ("Generate visible / focused parts (or everything when Focus = All)");
+    generateAllButton.onClick = [this] { generateFocusedParts(); };
     addAndMakeVisible (generateAllButton);
 
+    exportAllButton.setComponentID ("ghost");
+    exportAllButton.setTooltip ("Export a multi-track MIDI file of all ready parts");
+    exportAllButton.onClick = [this] { exportAllTracks(); };
+    addAndMakeVisible (exportAllButton);
+
+    undoButton.setComponentID ("ghost");
+    undoButton.setTooltip ("Undo last generation");
+    undoButton.onClick = [this]
+    {
+        if (processor.undoLastGeneration())
+        {
+            refreshBpmLabel();
+            refreshPanels();
+        }
+    };
+    addAndMakeVisible (undoButton);
+
+    addSoundsButton.setTooltip ("Import a sound pack folder (kicks, hats, etc.) — auto-sorted for preview");
+    addSoundsButton.onClick = [this]
+    {
+        auto chooser = std::make_shared<juce::FileChooser> (
+            "Import sound pack folder",
+            juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
+            "*", true); // directories
+
+        chooser->launchAsync (juce::FileBrowserComponent::openMode
+                              | juce::FileBrowserComponent::canSelectDirectories,
+            [this, chooser] (const juce::FileChooser& fc)
+            {
+                auto dir = fc.getResult();
+                if (! dir.isDirectory()) return;
+                juce::String err;
+                const int n = processor.samples().importPackFolder (dir, &err);
+                if (n > 0)
+                {
+                    const int assigned = processor.autoAssignSamplesFromLibrary (dir.getFileName());
+                    processor.rememberDrumKitInBrain (dir.getFileName());
+                    chatPanel.setDocsStatus (processor.ai().knowledge().statusLine());
+                    chatPanel.addAssistantMessage (
+                        "Imported drum kit \"" + dir.getFileName() + "\" (" + juce::String (n)
+                        + " files). Wired " + juce::String (assigned)
+                        + " drum pieces for preview. Kit memory saved to brain for Claude.");
+                }
+                else
+                {
+                    chatPanel.addAssistantMessage (
+                        "Could not import pack: " + (err.isNotEmpty() ? err : juce::String ("unknown error")));
+                }
+                refreshSampleControls();
+                samplesStatusLabel.setText (processor.samples().statusLine(),
+                                            juce::dontSendNotification);
+            });
+    };
+    addAndMakeVisible (addSoundsButton);
+
+    addMidiButton.setTooltip ("Import a folder of .mid loops for Melody / Bass / Chords / etc.");
+    addMidiButton.onClick = [this]
+    {
+        auto chooser = std::make_shared<juce::FileChooser> (
+            "Import MIDI pack folder",
+            juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
+            "*", true);
+
+        chooser->launchAsync (juce::FileBrowserComponent::openMode
+                              | juce::FileBrowserComponent::canSelectDirectories,
+            [this, chooser] (const juce::FileChooser& fc)
+            {
+                auto dir = fc.getResult();
+                if (! dir.isDirectory()) return;
+                juce::String err;
+                const int n = processor.midiLoops().importPackFolder (dir, &err);
+                if (n > 0)
+                {
+                    processor.rememberMidiPackInBrain (dir.getFileName());
+                    chatPanel.setDocsStatus (processor.ai().knowledge().statusLine());
+                    chatPanel.addAssistantMessage (
+                        "Imported " + juce::String (n) + " MIDI loops from \""
+                        + dir.getFileName()
+                        + "\". Pick a Kit in the MIDI kit menu and hit Load kit, "
+                          "or choose loops on each instrument’s MIDI menu.");
+                }
+                else
+                {
+                    chatPanel.addAssistantMessage (
+                        "Could not import MIDI pack: "
+                        + (err.isNotEmpty() ? err : juce::String ("no .mid files found")));
+                }
+                refreshMidiLoopControls();
+            });
+    };
+    addAndMakeVisible (addMidiButton);
+
+    midiPackLabel.setText ("MIDI pack", juce::dontSendNotification);
+    midiPackLabel.setFont (CustomLookAndFeel::font (11.5f, juce::Font::bold));
+    midiPackLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
+    midiPackLabel.setJustificationType (juce::Justification::centredRight);
+    addAndMakeVisible (midiPackLabel);
+
+    midiPackCombo.setTextWhenNothingSelected ("No MIDI packs");
+    midiPackCombo.setTooltip ("Your imported MIDI packs (Funky House, etc.)");
+    midiPackCombo.onChange = [this]
+    {
+        if (suppressMidiPackCallback) return;
+        refreshMidiLoopControls();
+    };
+    addAndMakeVisible (midiPackCombo);
+
+    midiKitCombo.setTextWhenNothingSelected ("Kit_1…");
+    midiKitCombo.setTooltip ("Matching Bass+Chord+Lead+Guitar set");
+    addAndMakeVisible (midiKitCombo);
+
+    loadMidiKitButton.setButtonText ("Load kit");
+    loadMidiKitButton.setComponentID ("primary");
+    loadMidiKitButton.setTooltip ("Load Bass/Chords/Lead/Guitar from this kit into preview");
+    loadMidiKitButton.onClick = [this]
+    {
+        juce::String pack;
+        if (midiPackCombo.getSelectedId() > 1)
+            pack = midiPackCombo.getItemText (midiPackCombo.getSelectedItemIndex());
+        else if (processor.midiLoops().packNames().size() > 0)
+            pack = processor.midiLoops().packNames()[0];
+
+        const juce::String kit = midiKitCombo.getText();
+        juce::String err;
+        const int n = processor.applyMidiKitBundle (pack, kit, &err);
+        if (n > 0)
+        {
+            processor.rememberMidiPackInBrain (pack);
+            chatPanel.addAssistantMessage (
+                "Loaded " + kit + " from \"" + pack + "\" (" + juce::String (n)
+                + " parts). Hit Preview.");
+            refreshBpmLabel();
+            refreshPanels();
+        }
+        else
+        {
+            chatPanel.addAssistantMessage (
+                "Could not load kit: " + (err.isNotEmpty() ? err : juce::String ("nothing found")));
+        }
+    };
+    addAndMakeVisible (loadMidiKitButton);
+
+    soundsFolderButton.setTooltip ("Open samples folder in Finder, then rescan");
+    soundsFolderButton.onClick = [this]
+    {
+        processor.samples().folder().revealToUser();
+        processor.samples().reload();
+        if (! processor.hasAnySampleAssignment() && processor.samples().size() > 0)
+            processor.autoAssignSamplesFromLibrary();
+        refreshSampleControls();
+    };
+    addAndMakeVisible (soundsFolderButton);
+
+    samplesStatusLabel.setFont (CustomLookAndFeel::font (11.0f));
+    samplesStatusLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
+    samplesStatusLabel.setText (processor.samples().statusLine(), juce::dontSendNotification);
+    addAndMakeVisible (samplesStatusLabel);
+
+    packLabel.setFont (CustomLookAndFeel::font (11.5f, juce::Font::bold));
+    packLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
+    packLabel.setJustificationType (juce::Justification::centredRight);
+    addAndMakeVisible (packLabel);
+
+    packCombo.setTextWhenNothingSelected ("No packs yet");
+    packCombo.setTooltip ("Your imported sound packs — selecting one loads those WAVs into preview");
+    packCombo.onChange = [this]
+    {
+        if (suppressPackCallback) return;
+        const int id = packCombo.getSelectedId();
+        juce::String packName;
+        if (id > 1)
+            packName = packCombo.getItemText (packCombo.getSelectedItemIndex());
+
+        // Make this pack’s files the drum preview only; save kit into the brain
+        if (packName.isNotEmpty() || processor.samples().size() > 0)
+        {
+            const int n = processor.autoAssignSamplesFromLibrary (packName);
+            processor.rememberDrumKitInBrain (packName);
+            chatPanel.setDocsStatus (processor.ai().knowledge().statusLine());
+            chatPanel.addAssistantMessage (
+                "Drum kit loaded for Drums only (" + juce::String (n)
+                + " pieces). Melody/bass/chords stay synth. Kit + drum theory saved to brain.");
+        }
+        refreshSampleControls();
+    };
+    addAndMakeVisible (packCombo);
+
+    previewButton.setComponentID ("ghost");
     previewButton.setClickingTogglesState (true);
     previewButton.onClick = [this]
     {
         const bool on = previewButton.getToggleState();
         processor.togglePreview (on);
-        previewButton.setButtonText (on ? "Stop" : "Preview All");
+        previewButton.setButtonText (on ? "Stop" : "Preview");
+        if (! on)
+            midiRoll.setPlayheadBeats (-1.0);
     };
     addAndMakeVisible (previewButton);
 
+    soundLabel.setText ("Genre", juce::dontSendNotification);
+    soundLabel.setFont (CustomLookAndFeel::font (11.5f, juce::Font::bold));
+    soundLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
+    soundLabel.setJustificationType (juce::Justification::centredRight);
+    addAndMakeVisible (soundLabel);
+
+    for (int g = 0; g < (int) GenreMode::NumModes; ++g)
+        genreCombo.addItem (toString ((GenreMode) g), g + 1);
+    genreCombo.setTextWhenNothingSelected ("House");
+    genreCombo.setTooltip ("Preview sounds for this genre (House piano, 808s, etc.)");
+    genreCombo.onChange = [this]
+    {
+        if (suppressGenreCallback) return;
+        const int id = genreCombo.getSelectedId();
+        if (id > 0)
+        {
+            processor.setGenreMode (genreModeFromIndex (id - 1), true);
+            refreshSoundControls();
+        }
+    };
+    addAndMakeVisible (genreCombo);
+    genreCombo.toFront (false);
+
+    keyLabel.setFont (CustomLookAndFeel::font (11.5f, juce::Font::bold));
+    keyLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
+    keyLabel.setJustificationType (juce::Justification::centredRight);
+    addAndMakeVisible (keyLabel);
+
+    const char* roots[] = { "C", "C#", "Db", "D", "D#", "Eb", "E", "F",
+                            "F#", "Gb", "G", "G#", "Ab", "A", "A#", "Bb", "B" };
+    for (int i = 0; i < (int) (sizeof (roots) / sizeof (roots[0])); ++i)
+        rootCombo.addItem (roots[i], i + 1);
+    rootCombo.setTooltip ("Project key root — generations stay in this key");
+    rootCombo.onChange = [this]
+    {
+        if (suppressKeyCallback) return;
+        if (rootCombo.getSelectedId() > 0)
+            processor.params().root = rootCombo.getText().toStdString();
+    };
+    addAndMakeVisible (rootCombo);
+
+    const char* scales[] = {
+        "major", "minor", "dorian", "phrygian", "lydian",
+        "mixolydian", "locrian", "harmonicMinor",
+        "minorPentatonic", "majorPentatonic"
+    };
+    for (int i = 0; i < (int) (sizeof (scales) / sizeof (scales[0])); ++i)
+        scaleCombo.addItem (scales[i], i + 1);
+    scaleCombo.setTooltip ("Project scale — generations stay in this scale");
+    scaleCombo.onChange = [this]
+    {
+        if (suppressKeyCallback) return;
+        if (scaleCombo.getSelectedId() > 0)
+            processor.params().scale = scaleCombo.getText().toStdString();
+    };
+    addAndMakeVisible (scaleCombo);
+
+    focusLabel.setFont (CustomLookAndFeel::font (11.5f, juce::Font::bold));
+    focusLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
+    focusLabel.setJustificationType (juce::Justification::centredRight);
+    addAndMakeVisible (focusLabel);
+
+    focusCombo.addItem ("All", 1);
+    focusCombo.addItem ("Drums only", 2);
+    focusCombo.addItem ("Harmonic (Chords/Pad)", 3);
+    focusCombo.addItem ("Bass + Drums", 4);
+    focusCombo.addItem ("Leads (Melody/Arp/Counter)", 5);
+    focusCombo.addItem ("Bass only", 6);
+    focusCombo.setSelectedId (1, juce::dontSendNotification);
+    focusCombo.setTooltip ("Show only the instruments you want to work on");
+    focusCombo.onChange = [this]
+    {
+        if (suppressFocusCallback) return;
+        applyWorkspaceFocus();
+        resized();
+    };
+    addAndMakeVisible (focusCombo);
+
+    sampleFilterLabel.setFont (CustomLookAndFeel::font (11.5f, juce::Font::bold));
+    sampleFilterLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
+    sampleFilterLabel.setJustificationType (juce::Justification::centredRight);
+    addAndMakeVisible (sampleFilterLabel);
+
+    sampleFilterCombo.addItem ("All types", 1);
+    for (int r = 0; r < (int) SampleRole::NumRoles; ++r)
+        sampleFilterCombo.addItem (toString ((SampleRole) r), r + 2);
+    sampleFilterCombo.setSelectedId (1, juce::dontSendNotification);
+    sampleFilterCombo.setTooltip ("Filter sample dropdowns by Kick / Hat / etc.");
+    sampleFilterCombo.onChange = [this]
+    {
+        if (suppressSampleFilterCallback) return;
+        refreshSampleControls();
+    };
+    addAndMakeVisible (sampleFilterCombo);
+
     apiKeyLabel.setFont (CustomLookAndFeel::font (11.5f, juce::Font::bold));
-    apiKeyLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::muted);
+    apiKeyLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
     addAndMakeVisible (apiKeyLabel);
+
+    providerLabel.setFont (CustomLookAndFeel::font (11.5f, juce::Font::bold));
+    providerLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
+    addAndMakeVisible (providerLabel);
+
+    providerCombo.addItem ("Claude", 1);
+    providerCombo.addItem ("OpenAI", 2);
+    providerCombo.setTooltip ("LLM provider (BYOK — your API key)");
+    providerCombo.onChange = [this]
+    {
+        if (suppressProviderCallback) return;
+        const auto p = providerCombo.getSelectedId() == 2
+                           ? AIClient::Provider::OpenAI
+                           : AIClient::Provider::Claude;
+        processor.ai().setProvider (p);
+        refreshProviderUi();
+        refreshPanels();
+    };
+    addAndMakeVisible (providerCombo);
+
+    modelLabel.setFont (CustomLookAndFeel::font (11.5f, juce::Font::bold));
+    modelLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
+    addAndMakeVisible (modelLabel);
+
+    modelCombo.setTooltip ("Claude model — Opus is strongest for musical MIDI; Sonnet 5 is the new default");
+    modelCombo.onChange = [this]
+    {
+        if (suppressModelCallback) return;
+        if (processor.ai().getProvider() == AIClient::Provider::OpenAI)
+            processor.ai().setOpenAiModel (modelCombo.getText());
+        else
+            processor.ai().setClaudeModel (modelCombo.getText());
+        refreshPanels();
+    };
+    addAndMakeVisible (modelCombo);
+
     apiKeyField.setPasswordCharacter ((juce::juce_wchar) 0x2022);
-    apiKeyField.setTextToShowWhenEmpty ("sk-ant-…", CustomLookAndFeel::text.withAlpha (0.35f));
+    apiKeyField.setTextToShowWhenEmpty (processor.ai().apiKeyPlaceholder(),
+                                        CustomLookAndFeel::txt2.withAlpha (0.55f));
     if (processor.ai().hasApiKey())
         apiKeyField.setText (processor.ai().apiKeyFromEnvironment()
                                  ? "(loaded from env)"
@@ -66,19 +405,68 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
             processor.ai().setApiKey (k);
             apiKeyField.setText ("(saved)", false);
         }
-        apiStatusLabel.setText (processor.ai().hasApiKey() ? "Connected" : "Add key to generate",
-                                juce::dontSendNotification);
+        refreshPanels();
     };
     addAndMakeVisible (apiKeyField);
+    refreshProviderUi();
+
+    addAndMakeVisible (midiRoll);
+    addAndMakeVisible (chordDashboard);
 
     chatPanel.onSend = [this] (juce::String prompt) { handlePrompt (prompt); };
+    chatPanel.onRequestMidiAttach = [this] () -> juce::String
+    {
+        const auto type = pickPartForMidiAttach();
+        if (processor.part (type).notes.empty())
+            return {};
+        return processor.midiContextForPart (type);
+    };
+    chatPanel.onAddDocs = [this]
+    {
+        auto chooser = std::make_shared<juce::FileChooser> (
+            "Upload music theory docs",
+            juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
+            "*.txt;*.md;*.text;*.markdown");
+
+        chooser->launchAsync (juce::FileBrowserComponent::openMode
+                              | juce::FileBrowserComponent::canSelectFiles
+                              | juce::FileBrowserComponent::canSelectMultipleItems,
+            [this, chooser] (const juce::FileChooser& fc)
+            {
+                auto results = fc.getResults();
+                int imported = 0;
+                juce::String lastError;
+                for (auto& f : results)
+                {
+                    juce::String err;
+                    if (processor.ai().knowledge().importFile (f, &err))
+                        ++imported;
+                    else if (err.isNotEmpty())
+                        lastError = err;
+                }
+
+                chatPanel.setDocsStatus (processor.ai().knowledge().statusLine());
+                if (imported > 0)
+                    chatPanel.addAssistantMessage (
+                        "Added " + juce::String (imported)
+                        + " theory doc" + (imported == 1 ? "" : "s")
+                        + ". Claude will reference them on the next generate.");
+                else if (lastError.isNotEmpty())
+                    chatPanel.addAssistantMessage ("Could not import doc: " + lastError);
+            });
+    };
+    chatPanel.onShowDocsFolder = [this]
+    {
+        processor.ai().knowledge().folder().revealToUser();
+    };
+    chatPanel.setDocsStatus (processor.ai().knowledge().statusLine());
     addAndMakeVisible (chatPanel);
 
     for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
     {
         const auto type = (InstrumentType) t;
         if (type == InstrumentType::Drums)
-            continue; // Drums gets its own multi-piece panel below.
+            continue;
 
         auto panel = std::make_unique<InstrumentPanel> (type);
 
@@ -87,6 +475,8 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
             processor.generatePart (type);
             refreshPanels();
         };
+        panel->onVary = [this, type] { handlePartTransform (type, "vary"); };
+        panel->onContinue = [this, type] { handlePartTransform (type, "continue"); };
         panel->onLockChanged = [this, type] (bool locked)
         {
             processor.part (type).locked = locked;
@@ -94,7 +484,31 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
         panel->onMuteChanged = [this, type] (bool muted)
         {
             processor.part (type).muted = muted;
+            refreshMidiRoll();
         };
+        panel->onTimbreChanged = [this, type] (PartTimbre timbre)
+        {
+            processor.setPartTimbre (type, timbre);
+        };
+        panel->onVolumeChanged = [this, type] (float g)
+        {
+            processor.setPartGain (type, g);
+        };
+        panel->onMidiLoopChanged = [this, type] (juce::String id)
+        {
+            juce::String err;
+            if (! processor.applyMidiLoopToPart (type, id, &err))
+            {
+                if (err.isNotEmpty())
+                    chatPanel.addAssistantMessage ("MIDI load: " + err);
+                return;
+            }
+            if (id.isNotEmpty())
+                chatPanel.addAssistantMessage (
+                    juce::String (toString (type)) + " loaded MIDI loop — Preview to hear it.");
+            refreshPanels();
+        };
+        panel->onMinimizeChanged = [this] { resized(); };
         panel->requestMidiFile = [this, type] () -> juce::File
         {
             return MidiGenerator::writeTempMidiFile (processor.part (type),
@@ -106,8 +520,6 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
         panels[(size_t) t] = std::move (panel);
     }
 
-    // Drums: kick/snare/clap/closed hat/open hat as independent pieces,
-    // each with its own Generate/Lock/Mute/Drag, plus a whole-loop shortcut.
     drumKitPanel.onGeneratePiece = [this] (DrumPiece dp)
     {
         processor.generateDrumPiece (dp);
@@ -126,7 +538,27 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
     {
         processor.drumPiece (dp).muted = muted;
         processor.rebuildDrumMasterPart();
+        refreshMidiRoll();
     };
+    drumKitPanel.onVolumeChanged = [this] (DrumPiece dp, float g)
+    {
+        processor.setDrumGain (dp, g);
+    };
+    drumKitPanel.onSampleChanged = [this] (DrumPiece dp, juce::String id)
+    {
+        processor.setDrumSampleId (dp, id);
+        if (id.isNotEmpty())
+        {
+            auto* e = processor.samples().findById (id);
+            const bool ok = e != nullptr
+                            && processor.samples().ensureLoaded (*e) != nullptr;
+            if (! ok)
+                chatPanel.addAssistantMessage (
+                    "Couldn't load sample for " + juce::String (toString (dp))
+                    + " — check the file still exists in Packs.");
+        }
+    };
+    drumKitPanel.onMinimizeChanged = [this] { resized(); };
     drumKitPanel.requestPieceMidiFile = [this] (DrumPiece dp) -> juce::File
     {
         return MidiGenerator::writeTempMidiFile (processor.drumPiece (dp),
@@ -141,34 +573,656 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
     };
     addAndMakeVisible (drumKitPanel);
 
+    // Packs already on disk — assign their WAVs as the preview instruments.
+    if (processor.samples().size() > 0)
+    {
+        auto packs = processor.samples().packNames();
+        juce::String list;
+        for (int i = 0; i < packs.size(); ++i)
+        {
+            if (i > 0) list << ", ";
+            list << "\"" << packs[i] << "\"";
+        }
+
+        const juce::String primary = packs.isEmpty() ? juce::String() : packs[0];
+        const int n = processor.autoAssignSamplesFromLibrary (primary);
+        processor.rememberDrumKitInBrain (primary);
+        chatPanel.setDocsStatus (processor.ai().knowledge().statusLine());
+        const int loaded = processor.countLoadedPreviewSamples();
+        chatPanel.addAssistantMessage (
+            "Drums use pack: " + list + " (" + juce::String (loaded)
+            + " WAVs loaded). Melody/chords/bass use synth + theory. "
+            "Kit memory is in the brain. Focus → Drums only → Gen drums → Preview.");
+    }
+    else
+    {
+        chatPanel.addAssistantMessage (
+            "No sound packs yet. Click Add sounds and choose a kit folder (with Kick/Snare/etc).");
+    }
+
+    if (processor.midiLoops().size() > 0)
+    {
+        auto midiPacks = processor.midiLoops().packNames();
+        const juce::String primaryMidi = midiPacks.isEmpty() ? juce::String() : midiPacks[0];
+        processor.rememberMidiPackInBrain (primaryMidi);
+        chatPanel.setDocsStatus (processor.ai().knowledge().statusLine());
+        juce::String midiList;
+        for (int i = 0; i < midiPacks.size(); ++i)
+        {
+            if (i > 0) midiList << ", ";
+            midiList << "\"" << midiPacks[i] << "\"";
+        }
+        chatPanel.addAssistantMessage (
+            "MIDI packs ready: " + midiList + " ("
+            + juce::String (processor.midiLoops().size())
+            + " loops). Choose MIDI pack → Kit_1… → Load kit, or pick loops on each instrument.");
+    }
+
     refreshPanels();
+    applyWorkspaceFocus();
+    startTimerHz (30); // playhead tracking
     setResizable (true, true);
-    setResizeLimits (760, 520, 1600, 1100);
-    setSize (960, 640);
+    setResizeLimits (980, 780, 2000, 1400);
+    setSize (1440, 960);
 }
 
 AIMidiGenEditor::~AIMidiGenEditor()
 {
+    stopTimer();
     setLookAndFeel (nullptr);
+}
+
+void AIMidiGenEditor::nudgeBpm (int delta)
+{
+    processor.setBpm (processor.getBpm() + (double) delta);
+    refreshBpmLabel();
+}
+
+void AIMidiGenEditor::refreshBpmLabel()
+{
+    bpmValue.setText (juce::String ((int) std::round (processor.getBpm())),
+                      juce::dontSendNotification);
+}
+
+void AIMidiGenEditor::timerCallback()
+{
+    if (processor.isPreviewing())
+    {
+        const double beats = processor.getPreviewPositionBeats();
+        midiRoll.setPlayheadBeats (beats);
+        chordDashboard.setPlayheadBeats (beats);
+    }
+    else if (previewButton.getToggleState() == false)
+    {
+        midiRoll.setPlayheadBeats (-1.0);
+        chordDashboard.setPlayheadBeats (-1.0);
+    }
+
+    undoButton.setEnabled (processor.canUndo());
 }
 
 void AIMidiGenEditor::handlePrompt (const juce::String& prompt)
 {
     chatPanel.setBusy (true);
-    processor.regenerateFromAI (prompt,
-        [this] (AIClient::Response r)
+    for (auto& panel : panels)
+        if (panel) panel->setAiBusy (true);
+
+    processor.handleChatTurn (prompt,
+        [this] (AIClient::TurnResponse r)
         {
             chatPanel.setBusy (false);
-            if (r.error.isNotEmpty())
-                chatPanel.addAssistantMessage ("⚠ " + r.error);
-            chatPanel.addAssistantMessage (r.assistantText);
+            for (auto& panel : panels)
+                if (panel) panel->setAiBusy (false);
+
+            if (! r.ok)
+            {
+                chatPanel.addAssistantMessage ("Error: "
+                    + (r.error.isNotEmpty() ? r.error : juce::String ("Request failed.")));
+                refreshPanels();
+                return;
+            }
+
+            chatPanel.addAssistantMessage (r.assistantText.isNotEmpty()
+                                              ? r.assistantText
+                                              : (r.generatedMidi ? "MIDI ready in the preview."
+                                                                 : "OK."));
+
+            // Only refresh the roll / auto-preview when MIDI was actually made.
+            if (! r.generatedMidi)
+            {
+                refreshPanels();
+                return;
+            }
+
+            chatPanel.clearMidiAttachment();
+            refreshBpmLabel();
             refreshPanels();
+            refreshSoundControls();
+
+            if (! previewButton.getToggleState())
+            {
+                previewButton.setToggleState (true, juce::dontSendNotification);
+                previewButton.setButtonText ("Stop");
+                processor.togglePreview (true);
+            }
+            else
+            {
+                processor.togglePreview (false);
+                processor.togglePreview (true);
+            }
+
+            midiRoll.setPlayheadBeats (0.0);
+            chordDashboard.setPlayheadBeats (0.0);
         });
+}
+
+void AIMidiGenEditor::handlePartTransform (InstrumentType type, const juce::String& mode)
+{
+    chatPanel.setBusy (true);
+    for (auto& panel : panels)
+        if (panel) panel->setAiBusy (true);
+
+    processor.transformPartWithAI (type, mode,
+        [this, type, mode] (AIClient::PatternResponse r)
+        {
+            chatPanel.setBusy (false);
+            for (auto& panel : panels)
+                if (panel) panel->setAiBusy (false);
+
+            if (! r.ok)
+            {
+                chatPanel.addAssistantMessage ("Error: "
+                    + (r.error.isNotEmpty() ? r.error : juce::String ("Transform failed.")));
+                refreshPanels();
+                return;
+            }
+
+            chatPanel.addAssistantMessage (
+                r.assistantText.isNotEmpty()
+                    ? r.assistantText
+                    : (juce::String (toString (type)) + " "
+                       + (mode.equalsIgnoreCase ("continue") ? "continued." : "varied.")));
+
+            refreshBpmLabel();
+            refreshPanels();
+
+            if (! previewButton.getToggleState())
+            {
+                previewButton.setToggleState (true, juce::dontSendNotification);
+                previewButton.setButtonText ("Stop");
+                processor.togglePreview (true);
+            }
+            else
+            {
+                processor.togglePreview (false);
+                processor.togglePreview (true);
+            }
+        });
+}
+
+InstrumentType AIMidiGenEditor::pickPartForMidiAttach() const
+{
+    for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
+    {
+        const auto type = (InstrumentType) t;
+        if (type == InstrumentType::Drums) continue;
+        if (! isTypeInFocus (type)) continue;
+        if (! processor.part (type).notes.empty())
+            return type;
+    }
+
+    for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
+    {
+        const auto type = (InstrumentType) t;
+        if (type == InstrumentType::Drums) continue;
+        if (! processor.part (type).notes.empty())
+            return type;
+    }
+
+    return InstrumentType::Chords;
+}
+
+void AIMidiGenEditor::exportAllTracks()
+{
+    auto src = processor.exportAllPartsMidiFile();
+    if (! src.existsAsFile())
+    {
+        chatPanel.addAssistantMessage ("Nothing to export — generate some parts first.");
+        return;
+    }
+
+    auto chooser = std::make_shared<juce::FileChooser> (
+        "Export multi-track MIDI",
+        juce::File::getSpecialLocation (juce::File::userDesktopDirectory)
+            .getChildFile ("AIMidiGen_All.mid"),
+        "*.mid");
+
+    chooser->launchAsync (juce::FileBrowserComponent::saveMode
+                          | juce::FileBrowserComponent::canSelectFiles,
+        [this, src, chooser] (const juce::FileChooser& fc)
+        {
+            auto dst = fc.getResult();
+            if (dst == juce::File()) return;
+            if (src.copyFileTo (dst))
+                chatPanel.addAssistantMessage ("Exported multi-track MIDI → " + dst.getFileName());
+            else
+                chatPanel.addAssistantMessage ("Export failed.");
+        });
+}
+
+void AIMidiGenEditor::refreshProviderUi()
+{
+    suppressProviderCallback = true;
+    providerCombo.setSelectedId (
+        processor.ai().getProvider() == AIClient::Provider::OpenAI ? 2 : 1,
+        juce::dontSendNotification);
+    suppressProviderCallback = false;
+
+    suppressModelCallback = true;
+    modelCombo.clear (juce::dontSendNotification);
+    juce::String selected;
+
+    if (processor.ai().getProvider() == AIClient::Provider::OpenAI)
+    {
+        modelCombo.addItem ("gpt-4o", 1);
+        modelCombo.addItem ("gpt-4.1", 2);
+        modelCombo.addItem ("o4-mini", 3);
+        selected = processor.ai().getOpenAiModel();
+    }
+    else
+    {
+        modelCombo.addItem ("claude-sonnet-5", 1);
+        modelCombo.addItem ("claude-opus-4-8", 2);
+        modelCombo.addItem ("claude-sonnet-4-6", 3);
+        selected = processor.ai().getClaudeModel();
+    }
+
+    int selectId = 1;
+    for (int i = 1; i <= modelCombo.getNumItems(); ++i)
+        if (modelCombo.getItemText (i - 1) == selected)
+            selectId = i;
+    modelCombo.setSelectedId (selectId, juce::dontSendNotification);
+    suppressModelCallback = false;
+
+    // Persist whatever is selected if settings had an unknown older id.
+    if (processor.ai().getProvider() == AIClient::Provider::OpenAI)
+        processor.ai().setOpenAiModel (modelCombo.getText());
+    else
+        processor.ai().setClaudeModel (modelCombo.getText());
+
+    apiKeyField.setTextToShowWhenEmpty (processor.ai().apiKeyPlaceholder(),
+                                        CustomLookAndFeel::txt2.withAlpha (0.55f));
+
+    if (processor.ai().hasApiKey())
+        apiKeyField.setText (processor.ai().apiKeyFromEnvironment()
+                                 ? "(loaded from env)"
+                                 : "(saved)",
+                             false);
+    else if (apiKeyField.getText().startsWith ("("))
+        apiKeyField.clear();
+}
+
+void AIMidiGenEditor::refreshMidiRoll()
+{
+    std::vector<MidiRollView::NoteDraw> drawNotes;
+
+    for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
+    {
+        const auto type = (InstrumentType) t;
+        if (type == InstrumentType::Drums)
+        {
+            for (int dp = 0; dp < (int) DrumPiece::NumPieces; ++dp)
+            {
+                auto& part = processor.drumPiece ((DrumPiece) dp);
+                for (auto& n : part.notes)
+                    drawNotes.push_back ({ n.startBeats, n.lengthBeats, n.pitch, n.velocity,
+                                           (int) InstrumentType::Drums, part.muted });
+            }
+            continue;
+        }
+
+        auto& part = processor.part (type);
+        for (auto& n : part.notes)
+            drawNotes.push_back ({ n.startBeats, n.lengthBeats, n.pitch, n.velocity,
+                                   t, part.muted });
+    }
+
+    midiRoll.setLoopLengthBeats (processor.getLoopLengthBeats());
+    midiRoll.setNotes (std::move (drawNotes));
+}
+
+void AIMidiGenEditor::refreshSoundControls()
+{
+    suppressGenreCallback = true;
+    genreCombo.setSelectedId ((int) processor.getGenreMode() + 1, juce::dontSendNotification);
+    suppressGenreCallback = false;
+
+    suppressKeyCallback = true;
+    {
+        const auto root = juce::String (processor.params().root);
+        bool foundRoot = false;
+        for (int i = 1; i <= rootCombo.getNumItems(); ++i)
+            if (rootCombo.getItemText (i - 1).equalsIgnoreCase (root))
+            {
+                rootCombo.setSelectedId (i, juce::dontSendNotification);
+                foundRoot = true;
+                break;
+            }
+        if (! foundRoot)
+            rootCombo.setText (root, juce::dontSendNotification);
+
+        const auto scale = juce::String (processor.params().scale);
+        bool foundScale = false;
+        for (int i = 1; i <= scaleCombo.getNumItems(); ++i)
+            if (scaleCombo.getItemText (i - 1).equalsIgnoreCase (scale))
+            {
+                scaleCombo.setSelectedId (i, juce::dontSendNotification);
+                foundScale = true;
+                break;
+            }
+        if (! foundScale)
+            scaleCombo.setText (scale, juce::dontSendNotification);
+    }
+    suppressKeyCallback = false;
+
+    const auto map = defaultsFor (processor.getGenreMode());
+    for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
+    {
+        if ((InstrumentType) t == InstrumentType::Drums) continue;
+        if (panels[(size_t) t] == nullptr) continue;
+        panels[(size_t) t]->setSoundOptions (map.variants[(size_t) t],
+                                             processor.getPartTimbre ((InstrumentType) t));
+        panels[(size_t) t]->setVolume (processor.getPartGain ((InstrumentType) t));
+    }
+
+    for (int dp = 0; dp < (int) DrumPiece::NumPieces; ++dp)
+        drumKitPanel.setPieceVolume ((DrumPiece) dp,
+                                     processor.getDrumGain ((DrumPiece) dp));
+
+    refreshSampleControls();
+}
+
+void AIMidiGenEditor::refreshSampleControls()
+{
+    samplesStatusLabel.setText (processor.samples().statusLine(),
+                                juce::dontSendNotification);
+
+    // Rebuild Pack menu from what's on disk.
+    juce::String selectedPack;
+    {
+        suppressPackCallback = true;
+        const juce::String prevName = packCombo.getNumItems() > 0 ? packCombo.getText() : juce::String();
+
+        packCombo.clear (juce::dontSendNotification);
+        packCombo.addItem ("All packs", 1);
+        auto packs = processor.samples().packNames();
+        int selectId = 1;
+        for (int i = 0; i < packs.size(); ++i)
+        {
+            const int id = i + 2;
+            packCombo.addItem (packs[i], id);
+            if (prevName.isNotEmpty() && packs[i] == prevName)
+                selectId = id;
+        }
+        if (selectId == 1 && packs.size() == 1)
+            selectId = 2; // auto-select the only pack
+        packCombo.setSelectedId (selectId, juce::dontSendNotification);
+
+        if (selectId > 1)
+        {
+            const int idx = packCombo.getSelectedItemIndex();
+            if (idx >= 0)
+                selectedPack = packCombo.getItemText (idx);
+        }
+        suppressPackCallback = false;
+    }
+
+    auto buildOpts = [this, &selectedPack] (SampleRole prefer) -> std::vector<const SampleEntry*>
+    {
+        std::vector<const SampleEntry*> pool;
+        if (selectedPack.isNotEmpty())
+            pool = processor.samples().samplesForPack (selectedPack);
+        else
+            for (auto& e : processor.samples().all())
+                pool.push_back (&e);
+
+        // Optional Type filter — if it would empty the list, ignore it so menus never go blank
+        const int filterId = sampleFilterCombo.getSelectedId();
+        if (filterId > 1)
+        {
+            const auto role = (SampleRole) (filterId - 2);
+            std::vector<const SampleEntry*> filtered;
+            for (auto* e : pool)
+                if (e != nullptr && e->role == role)
+                    filtered.push_back (e);
+            if (! filtered.empty())
+                pool.swap (filtered);
+        }
+
+        // Preferred role first, then everything else in the pack
+        std::vector<const SampleEntry*> opts;
+        opts.reserve (pool.size());
+        for (auto* e : pool)
+            if (e != nullptr && e->role == prefer)
+                opts.push_back (e);
+        for (auto* e : pool)
+            if (e != nullptr && e->role != prefer)
+                opts.push_back (e);
+
+        // Absolute fallback: never leave an instrument with an empty menu if library has sounds
+        if (opts.empty())
+            for (auto& e : processor.samples().all())
+                opts.push_back (&e);
+
+        return opts;
+    };
+
+    for (int dp = 0; dp < (int) DrumPiece::NumPieces; ++dp)
+    {
+        const auto piece = (DrumPiece) dp;
+        drumKitPanel.setSampleOptions (piece,
+                                       buildOpts (roleForDrumPiece (piece)),
+                                       processor.getDrumSampleId (piece));
+    }
+
+    // Pitched instruments never use drum-kit one-shots
+    for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
+    {
+        // no-op: InstrumentPanel no longer has pack sample pickers
+        juce::ignoreUnused (t);
+    }
+
+    processor.syncSamplesToSynth();
+    refreshMidiLoopControls();
+}
+
+void AIMidiGenEditor::refreshMidiLoopControls()
+{
+    processor.midiLoops().reload();
+
+    juce::String selectedPack;
+    {
+        suppressMidiPackCallback = true;
+        const juce::String prev = midiPackCombo.getNumItems() > 0 ? midiPackCombo.getText() : juce::String();
+        midiPackCombo.clear (juce::dontSendNotification);
+        midiPackCombo.addItem ("All MIDI packs", 1);
+        auto packs = processor.midiLoops().packNames();
+        int selectId = 1;
+        for (int i = 0; i < packs.size(); ++i)
+        {
+            const int id = i + 2;
+            midiPackCombo.addItem (packs[i], id);
+            if (prev.isNotEmpty() && packs[i] == prev)
+                selectId = id;
+        }
+        // Prefer a real pack over "All" when only one exists
+        if (packs.size() >= 1 && (selectId == 1 || prev.isEmpty() || prev == "All MIDI packs"
+                                  || prev == "No MIDI packs" || prev == "MIDI pack"))
+            selectId = 2;
+        midiPackCombo.setSelectedId (selectId, juce::dontSendNotification);
+        if (selectId > 1)
+            selectedPack = midiPackCombo.getItemText (midiPackCombo.getSelectedItemIndex());
+        suppressMidiPackCallback = false;
+    }
+
+    {
+        const juce::String prevKit = midiKitCombo.getText();
+        midiKitCombo.clear (juce::dontSendNotification);
+        auto kits = processor.midiLoops().kitBundleNames (selectedPack);
+        int selectId = 0;
+        for (int i = 0; i < kits.size(); ++i)
+        {
+            midiKitCombo.addItem (kits[i], i + 1);
+            if (prevKit == kits[i])
+                selectId = i + 1;
+        }
+        if (selectId == 0 && kits.size() > 0)
+            selectId = 1;
+        if (selectId > 0)
+            midiKitCombo.setSelectedId (selectId, juce::dontSendNotification);
+        loadMidiKitButton.setEnabled (kits.size() > 0);
+    }
+
+    samplesStatusLabel.setText (
+        processor.samples().statusLine() + " · " + processor.midiLoops().statusLine(),
+        juce::dontSendNotification);
+
+    for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
+    {
+        const auto type = (InstrumentType) t;
+        if (type == InstrumentType::Drums) continue;
+        if (panels[(size_t) t] == nullptr) continue;
+        panels[(size_t) t]->setMidiLoopOptions (
+            processor.midiLoops().loopsForInstrumentInPack (type, selectedPack),
+            processor.getPartMidiLoopId (type));
+    }
+}
+
+bool AIMidiGenEditor::isTypeInFocus (InstrumentType type) const
+{
+    switch (focusCombo.getSelectedId())
+    {
+        case 2: return type == InstrumentType::Drums;
+        case 3: return type == InstrumentType::Chords || type == InstrumentType::Pad;
+        case 4: return type == InstrumentType::Bass || type == InstrumentType::Drums;
+        case 5: return type == InstrumentType::Melody
+                    || type == InstrumentType::Arp
+                    || type == InstrumentType::CounterMelody;
+        case 6: return type == InstrumentType::Bass;
+        default: return true; // All
+    }
+}
+
+void AIMidiGenEditor::applyWorkspaceFocus()
+{
+    for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
+    {
+        const auto type = (InstrumentType) t;
+        const bool show = isTypeInFocus (type);
+        if (type == InstrumentType::Drums)
+            drumKitPanel.setVisible (show);
+        else if (panels[(size_t) t] != nullptr)
+            panels[(size_t) t]->setVisible (show);
+    }
+
+    const int id = focusCombo.getSelectedId();
+    if (id == 2)
+        generateAllButton.setButtonText ("Gen drums");
+    else if (id == 1)
+        generateAllButton.setButtonText ("Generate all");
+    else
+        generateAllButton.setButtonText ("Gen focused");
+}
+
+void AIMidiGenEditor::generateFocusedParts()
+{
+    const int id = focusCombo.getSelectedId();
+    if (id <= 1)
+    {
+        processor.generateAllParts();
+    }
+    else if (id == 2)
+    {
+        processor.generateDrumKit();
+    }
+    else
+    {
+        for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
+        {
+            const auto type = (InstrumentType) t;
+            if (! isTypeInFocus (type)) continue;
+            if (type == InstrumentType::Drums)
+                processor.generateDrumKit();
+            else
+                processor.generatePart (type);
+        }
+    }
+    refreshPanels();
+}
+
+void AIMidiGenEditor::refreshChordDashboard()
+{
+    chordDashboard.setLoopBars (processor.params().bars);
+    const double now = processor.isPreviewing()
+                           ? processor.getPreviewPositionBeats()
+                           : 0.0;
+
+    const InstrumentType tracked[] = {
+        InstrumentType::Chords, InstrumentType::Pad,
+        InstrumentType::Bass, InstrumentType::Melody
+    };
+
+    for (auto type : tracked)
+    {
+        auto& part = processor.part (type);
+        auto hits = analysePartChords (part, processor.params());
+        auto nowName = chordAtBeat (part, processor.params(), now);
+        chordDashboard.setPartChords (type, hits, nowName);
+
+        if (type == InstrumentType::Drums) continue;
+        if (panels[(size_t) type] == nullptr) continue;
+
+        juce::String summary;
+        const int maxShow = 6;
+        for (int i = 0; i < (int) hits.size() && i < maxShow; ++i)
+        {
+            if (i) summary << " · ";
+            summary << hits[(size_t) i].name;
+        }
+        if ((int) hits.size() > maxShow)
+            summary << " …";
+        if (summary.isEmpty())
+            summary = part.notes.empty() ? "—" : juce::String ((int) part.notes.size()) + " notes";
+        panels[(size_t) type]->setChordSummary (summary);
+    }
+
+    // Remaining pitched panels (arp / counter)
+    for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
+    {
+        const auto type = (InstrumentType) t;
+        if (type == InstrumentType::Drums || panels[(size_t) t] == nullptr) continue;
+        if (type == InstrumentType::Chords || type == InstrumentType::Pad
+            || type == InstrumentType::Bass || type == InstrumentType::Melody)
+            continue;
+
+        auto hits = analysePartChords (processor.part (type), processor.params());
+        juce::String summary;
+        for (int i = 0; i < (int) hits.size() && i < 4; ++i)
+        {
+            if (i) summary << " · ";
+            summary << hits[(size_t) i].name;
+        }
+        if (summary.isEmpty())
+            summary = processor.part (type).notes.empty()
+                          ? "—"
+                          : juce::String ((int) processor.part (type).notes.size()) + " notes";
+        panels[(size_t) t]->setChordSummary (summary);
+    }
 }
 
 void AIMidiGenEditor::refreshPanels()
 {
-    int readyParts = 0;
+    readyParts = 0;
     for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
     {
         const bool hasNotes = ! processor.part ((InstrumentType) t).notes.empty();
@@ -182,83 +1236,218 @@ void AIMidiGenEditor::refreshPanels()
         drumKitPanel.setPieceHasContent ((DrumPiece) dp,
             ! processor.drumPiece ((DrumPiece) dp).notes.empty());
 
-    meterValueLabel.setText (juce::String (readyParts) + "/7", juce::dontSendNotification);
-    apiStatusLabel.setText (processor.ai().hasApiKey() ? "Connected" : "Add key to generate",
+    apiStatusLabel.setText (processor.ai().hasApiKey()
+                                ? (processor.ai().providerDisplayName() + " · "
+                                   + (processor.ai().getProvider() == AIClient::Provider::OpenAI
+                                          ? processor.ai().getOpenAiModel()
+                                          : processor.ai().getClaudeModel()))
+                                : ("Add " + processor.ai().providerDisplayName() + " key"),
                             juce::dontSendNotification);
+
+    chatPanel.setModelLabel (processor.ai().getProvider() == AIClient::Provider::OpenAI
+                                 ? processor.ai().getOpenAiModel()
+                                 : processor.ai().getClaudeModel());
+    meterValueLabel.setText (juce::String (readyParts) + "/7", juce::dontSendNotification);
+    refreshBpmLabel();
+    refreshSoundControls();
+    refreshChordDashboard();
+    undoButton.setEnabled (processor.canUndo());
+
+    refreshMidiRoll();
     repaint();
 }
 
 void AIMidiGenEditor::paint (juce::Graphics& g)
 {
-    g.fillAll (CustomLookAndFeel::bg);
+    CustomLookAndFeel::fillBackdrop (g, getLocalBounds());
 
-    auto r = getLocalBounds().reduced (14);
-    auto header = r.removeFromTop (86);
-    CustomLookAndFeel::drawPanel (g, header);
+    // Slim top bars — Cursor/ChatGPT chrome, not DAW panels.
+    auto r = getLocalBounds();
+    auto topBar = r.removeFromTop (52);
+    g.setColour (CustomLookAndFeel::bg2);
+    g.fillRect (topBar);
+    g.setColour (CustomLookAndFeel::line.withAlpha (0.7f));
+    g.drawHorizontalLine (topBar.getBottom() - 1, 0.0f, (float) getWidth());
 
-    auto meter = header.removeFromRight (96).reduced (18, 12).toFloat();
-    const float start = juce::MathConstants<float>::pi * 1.20f;
-    const float end = juce::MathConstants<float>::pi * 3.80f;
-    const float ready = meterValueLabel.getText().upToFirstOccurrenceOf ("/", false, false).getFloatValue();
-    juce::Path baseArc, valueArc;
-    baseArc.addCentredArc (meter.getCentreX(), meter.getCentreY(), 25.0f, 25.0f, 0.0f, start, end, true);
-    valueArc.addCentredArc (meter.getCentreX(), meter.getCentreY(), 25.0f, 25.0f, 0.0f,
-                            start, start + (end - start) * juce::jlimit (0.0f, 1.0f, ready / 7.0f), true);
-    g.setColour (CustomLookAndFeel::divider);
-    g.strokePath (baseArc, juce::PathStrokeType (3.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-    g.setColour (CustomLookAndFeel::accent);
-    g.strokePath (valueArc, juce::PathStrokeType (3.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    auto settingsBar = r.removeFromTop (84);
+    g.setColour (CustomLookAndFeel::bg1);
+    g.fillRect (settingsBar);
+    g.setColour (CustomLookAndFeel::line.withAlpha (0.45f));
+    g.drawHorizontalLine (settingsBar.getBottom() - 1, 0.0f, (float) getWidth());
+
+    // Tiny readiness chip (replaces heavy dial)
+    if (! meterValueLabel.isVisible())
+    {
+        auto chip = juce::Rectangle<float> ((float) getWidth() - 86.0f, 14.0f, 70.0f, 24.0f);
+        g.setColour (CustomLookAndFeel::bg3);
+        g.fillRoundedRectangle (chip, 12.0f);
+        g.setColour (CustomLookAndFeel::txt2);
+        g.setFont (CustomLookAndFeel::font (11.0f));
+        g.drawText (juce::String (readyParts) + "/7 ready", chip.toNearestInt(),
+                    juce::Justification::centred);
+    }
 }
 
 void AIMidiGenEditor::resized()
 {
-    auto r = getLocalBounds().reduced (14);
+    auto r = getLocalBounds();
 
-    auto header = r.removeFromTop (86).reduced (14, 10);
-    auto meter = header.removeFromRight (96);
-    meterValueLabel.setBounds (meter.withSizeKeepingCentre (54, 24).translated (0, -3));
-    meterLabel.setBounds (meter.removeFromBottom (18));
+    // ---- Top app bar ----
+    auto topBar = r.removeFromTop (52).reduced (16, 10);
+    headerLabel.setBounds (topBar.removeFromLeft (120));
+    topBar.removeFromLeft (10);
+    subheaderLabel.setBounds (topBar.removeFromLeft (120));
 
-    auto topLine = header.removeFromTop (28);
-    headerLabel.setBounds (topLine.removeFromLeft (190));
-    generateAllButton.setBounds (topLine.removeFromRight (118));
-    topLine.removeFromRight (8);
-    previewButton.setBounds (topLine.removeFromRight (112));
+    generateAllButton.setBounds (topBar.removeFromRight (108).withSizeKeepingCentre (108, 32));
+    topBar.removeFromRight (6);
+    exportAllButton.setBounds (topBar.removeFromRight (88).withSizeKeepingCentre (88, 32));
+    topBar.removeFromRight (6);
+    undoButton.setBounds (topBar.removeFromRight (64).withSizeKeepingCentre (64, 32));
+    topBar.removeFromRight (6);
+    previewButton.setBounds (topBar.removeFromRight (84).withSizeKeepingCentre (84, 32));
+    topBar.removeFromRight (14);
 
-    subheaderLabel.setBounds (header.removeFromTop (20));
-    header.removeFromTop (7);
-    apiKeyLabel.setBounds (header.removeFromLeft (92));
-    apiKeyField.setBounds (header.removeFromLeft (260));
-    header.removeFromLeft (10);
-    apiStatusLabel.setBounds (header.removeFromLeft (140));
+    auto bpmArea = topBar.removeFromRight (128).withSizeKeepingCentre (128, 32);
+    bpmPlus.setBounds (bpmArea.removeFromRight (28));
+    bpmArea.removeFromRight (2);
+    bpmMinus.setBounds (bpmArea.removeFromLeft (28));
+    bpmArea.removeFromLeft (2);
+    auto valueCol = bpmArea;
+    bpmValue.setBounds (valueCol.removeFromTop (16));
+    bpmLabel.setBounds (valueCol);
 
-    r.removeFromTop (12);
+    // ---- Compact settings strip (2 rows) ----
+    auto settings = r.removeFromTop (84).reduced (16, 8);
 
-    // Left: chat. Right: instrument grid.
-    auto chatArea = r.removeFromLeft (juce::jmax (260, r.getWidth() / 3));
-    chatPanel.setBounds (chatArea);
-    r.removeFromLeft (12);
+    auto row1 = settings.removeFromTop (30);
+    providerLabel.setBounds (row1.removeFromLeft (22));
+    providerCombo.setBounds (row1.removeFromLeft (78).reduced (0, 1));
+    row1.removeFromLeft (6);
+    modelLabel.setBounds (row1.removeFromLeft (42));
+    modelCombo.setBounds (row1.removeFromLeft (140).reduced (0, 1));
+    row1.removeFromLeft (8);
+    apiKeyLabel.setBounds (row1.removeFromLeft (48));
+    apiKeyField.setBounds (row1.removeFromLeft (110));
+    row1.removeFromLeft (6);
+    apiStatusLabel.setBounds (row1.removeFromLeft (160));
+    row1.removeFromLeft (8);
+    keyLabel.setBounds (row1.removeFromLeft (28));
+    rootCombo.setBounds (row1.removeFromLeft (48).reduced (0, 1));
+    row1.removeFromLeft (4);
+    scaleCombo.setBounds (row1.removeFromLeft (100).reduced (0, 1));
+    row1.removeFromLeft (8);
+    soundLabel.setBounds (row1.removeFromLeft (40));
+    genreCombo.setBounds (row1.removeFromLeft (110).reduced (0, 1));
 
-    // Grid of instrument panels (2 columns).
-    const int cols = 2;
-    const int n = (int) InstrumentType::NumTypes;
-    const int rows = (n + cols - 1) / cols;
-    const int gap = 10;
-    const int cellW = (r.getWidth() - gap * (cols - 1)) / cols;
-    const int cellH = (r.getHeight() - gap * (rows - 1)) / rows;
+    settings.removeFromTop (6);
+    auto row2 = settings.removeFromTop (30);
+    midiPackLabel.setBounds (row2.removeFromLeft (40));
+    midiPackCombo.setBounds (row2.removeFromLeft (juce::jmin (220, row2.getWidth() / 3)).reduced (0, 1));
+    row2.removeFromLeft (6);
+    midiKitCombo.setBounds (row2.removeFromLeft (86).reduced (0, 1));
+    row2.removeFromLeft (4);
+    loadMidiKitButton.setBounds (row2.removeFromLeft (74).withSizeKeepingCentre (74, 26));
+    row2.removeFromLeft (4);
+    addMidiButton.setBounds (row2.removeFromLeft (72).withSizeKeepingCentre (72, 26));
+    row2.removeFromLeft (10);
+    packLabel.setText ("Sounds", juce::dontSendNotification);
+    packLabel.setBounds (row2.removeFromLeft (48));
+    packCombo.setBounds (row2.removeFromLeft (140).reduced (0, 1));
+    row2.removeFromLeft (6);
+    addSoundsButton.setBounds (row2.removeFromLeft (84).withSizeKeepingCentre (84, 26));
+    row2.removeFromLeft (4);
+    soundsFolderButton.setBounds (row2.removeFromLeft (56).withSizeKeepingCentre (56, 26));
+    row2.removeFromLeft (8);
+    focusLabel.setBounds (row2.removeFromLeft (36));
+    focusCombo.setBounds (row2.removeFromLeft (120).reduced (0, 1));
+    row2.removeFromLeft (6);
+    sampleFilterLabel.setBounds (row2.removeFromLeft (32));
+    sampleFilterCombo.setBounds (row2.removeFromLeft (90).reduced (0, 1));
+    row2.removeFromLeft (6);
+    samplesStatusLabel.setBounds (row2);
 
-    for (int i = 0; i < n; ++i)
+    // Hide the old dial label — chip is painted instead
+    meterValueLabel.setBounds ({});
+
+    // ---- Main workspace: chat-first (Cursor) ----
+    auto chatW = juce::jlimit (360, 520, r.getWidth() * 38 / 100);
+    chatPanel.setBounds (r.removeFromLeft (chatW));
+    r.removeFromLeft (0);
+
+    auto workspace = r.reduced (12, 10);
+
+    auto rollArea = workspace.removeFromTop (juce::jmax (120, workspace.getHeight() * 22 / 100));
+    midiRoll.setBounds (rollArea);
+    workspace.removeFromTop (8);
+    auto dashArea = workspace.removeFromTop (juce::jmax (88, workspace.getHeight() * 18 / 100));
+    chordDashboard.setBounds (dashArea);
+    workspace.removeFromTop (10);
+
+    struct Slot
     {
-        const int col = i % cols;
-        const int row = i / cols;
-        juce::Rectangle<int> cell (r.getX() + col * (cellW + gap),
-                                   r.getY() + row * (cellH + gap),
-                                   cellW, cellH);
+        juce::Component* comp = nullptr;
+        int preferredH = 200;
+        bool wide = false;
+    };
+    std::vector<Slot> slots;
+    for (int i = 0; i < (int) InstrumentType::NumTypes; ++i)
+    {
+        const auto type = (InstrumentType) i;
+        if (! isTypeInFocus (type)) continue;
 
-        if ((InstrumentType) i == InstrumentType::Drums)
-            drumKitPanel.setBounds (cell);
-        else
-            panels[(size_t) i]->setBounds (cell);
+        if (type == InstrumentType::Drums)
+        {
+            slots.push_back ({ &drumKitPanel, drumKitPanel.preferredHeight(),
+                               focusCombo.getSelectedId() == 2 });
+        }
+        else if (panels[(size_t) i] != nullptr)
+        {
+            slots.push_back ({ panels[(size_t) i].get(),
+                               panels[(size_t) i]->preferredHeight(), false });
+        }
+    }
+
+    const int gap = 8;
+    const int cols = (slots.size() == 1) ? 1 : (slots.size() <= 2 ? 2 : 3);
+    const int cellW = cols > 0 ? (workspace.getWidth() - gap * (cols - 1)) / cols : workspace.getWidth();
+
+    int x = workspace.getX();
+    int y = workspace.getY();
+    int col = 0;
+    int rowMaxH = 0;
+
+    for (auto& slot : slots)
+    {
+        if (slot.comp == nullptr) continue;
+
+        if (slot.wide || cols == 1)
+        {
+            if (col > 0)
+            {
+                y += rowMaxH + gap;
+                x = workspace.getX();
+                col = 0;
+                rowMaxH = 0;
+            }
+            const int h = juce::jmin (slot.preferredH, workspace.getBottom() - y);
+            slot.comp->setBounds (x, y, workspace.getWidth(), juce::jmax (34, h));
+            y += juce::jmax (34, h) + gap;
+            continue;
+        }
+
+        const int h = juce::jmax (34, slot.preferredH);
+        slot.comp->setBounds (x, y, cellW, h);
+        rowMaxH = juce::jmax (rowMaxH, h);
+        ++col;
+        x += cellW + gap;
+
+        if (col >= cols)
+        {
+            y += rowMaxH + gap;
+            x = workspace.getX();
+            col = 0;
+            rowMaxH = 0;
+        }
     }
 }
 

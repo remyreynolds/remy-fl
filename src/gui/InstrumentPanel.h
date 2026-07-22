@@ -2,42 +2,77 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../engine/MusicInstructions.h"
+#include "../engine/PreviewSounds.h"
+#include "../engine/SampleLibrary.h"
+#include "../engine/MidiLibrary.h"
+#include "FileDragButton.h"
 #include <functional>
+#include <vector>
 
 namespace aimidi
 {
-/** One instrument's control strip: label + the full action set from the spec
-    (Generate, Regenerate, Lock, Mute, Solo, Drag MIDI, Export). The "Drag MIDI"
-    button initiates an external OS drag so the .mid drops straight into FL. */
+/** One pitched-instrument strip: MIDI loop picker, synth style, generate/lock/mute. */
 class InstrumentPanel : public juce::Component
 {
 public:
     explicit InstrumentPanel (InstrumentType type);
 
-    // Callbacks wired by the editor:
     std::function<void()>            onGenerate;
+    std::function<void()>            onVary;
+    std::function<void()>            onContinue;
     std::function<void (bool)>       onLockChanged;
     std::function<void (bool)>       onMuteChanged;
-    // Returns a freshly-written temp .mid file for this instrument to drag/export.
+    std::function<void (PartTimbre)> onTimbreChanged;
+    std::function<void (float)>      onVolumeChanged;
+    std::function<void (juce::String)> onMidiLoopChanged; // empty = keep / AI generate
+    std::function<void()>            onMinimizeChanged;
     std::function<juce::File()>      requestMidiFile;
 
     InstrumentType getType() const { return type; }
     void setHasContent (bool has);
+    void setChordSummary (const juce::String& summary);
+    void setVolume (float gain01);
+    void setSoundOptions (const std::vector<PartTimbre>& options, PartTimbre selected);
+    void setMidiLoopOptions (const std::vector<const MidiEntry*>& options,
+                             const juce::String& selectedId);
+    void setAiBusy (bool busy);
+
+    bool isMinimized() const { return minimized; }
+    void setMinimized (bool shouldMinimize);
+    int preferredHeight() const { return minimized ? 34 : 200; }
 
     void resized() override;
     void paint (juce::Graphics&) override;
 
 private:
-    void startMidiDrag();
-
     InstrumentType type;
     juce::Label     title;
+    juce::TextButton minimizeBtn { "−" };
+    juce::Label     chordLabel;
+    juce::Label     volLabel { {}, "Vol" };
+    juce::Slider    volSlider;
+    juce::Label     midiLabel { {}, "MIDI" };
+    juce::ComboBox  midiCombo;
+    juce::Label     synthLabel { {}, "Synth" };
+    juce::ComboBox  soundCombo;
     juce::TextButton generateBtn { "Generate" };
+    juce::TextButton varyBtn    { "Vary" };
+    juce::TextButton continueBtn{ "Continue" };
     juce::TextButton lockBtn  { "Lock" };
     juce::TextButton muteBtn  { "Mute" };
-    juce::TextButton dragBtn  { "Drag MIDI" };
+    FileDragButton   dragBtn  { "Drag MIDI" };
     juce::TextButton exportBtn{ "Export" };
+
     bool hasContent = false;
+    bool minimized = false;
+    bool aiBusy = false;
+    bool suppressVolCallback = false;
+    bool suppressTimbreCallback = false;
+    bool suppressMidiCallback = false;
+    juce::StringArray midiIds;
+
+    void updateMinimizedUi();
+    void updateActionEnabled();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (InstrumentPanel)
 };

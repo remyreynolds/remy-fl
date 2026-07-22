@@ -100,3 +100,7 @@ ai-midi-gen/
 ```
 
 See **DEVLOG.md** for what's done, known issues, and the phase roadmap.
+
+## Groovewright brain pipeline
+See [README_BRAIN.md](README_BRAIN.md) for the Python MIDI agent (prompt file → validators → .mid).
+
