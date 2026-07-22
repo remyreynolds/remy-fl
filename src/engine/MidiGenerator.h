@@ -63,6 +63,12 @@ private:
 
     std::mt19937 rng { std::random_device{}() };
     float rand01() { return std::uniform_real_distribution<float> (0.f, 1.f) (rng); }
+    int   randInt (int lo, int hi) { return std::uniform_int_distribution<int> (lo, hi) (rng); }
+
+    /** Draw a house chord progression (scale degrees, one per bar) from a
+        curated pool. Same seeded rng state => same progression, so chords,
+        bass and pad agree when generated with the same params.seed. */
+    std::vector<int> pickProgression();
 };
 
 } // namespace aimidi
