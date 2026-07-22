@@ -4,23 +4,23 @@
 
 namespace aimidi
 {
-/** Cursor / Claude / ChatGPT-inspired UI: soft dark surfaces, large radius,
-    quiet borders, chat-first chrome. */
+/** Splice-instrument-inspired UI: blue-black studio surfaces, tight radii,
+    hairline borders, one electric-blue accent. */
 class CustomLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
-    // ---- Theme tokens (ChatGPT/Cursor dark) ---------------------------------
-    static inline const juce::Colour bg1   { 0xff0e0e10 }; // app backdrop
-    static inline const juce::Colour bg2   { 0xff161618 }; // sidebar / panel
-    static inline const juce::Colour bg3   { 0xff212124 }; // control / composer
-    static inline const juce::Colour bg4   { 0xff2a2a2e }; // hover
-    static inline const juce::Colour bg5   { 0xff323236 }; // pressed / chip
-    static inline const juce::Colour line  { 0xff2c2c30 }; // hairline
-    static inline const juce::Colour txt1  { 0xffececef }; // primary
-    static inline const juce::Colour txt2  { 0xff8e8e96 }; // secondary
-    static inline const juce::Colour accent{ 0xff7c8cff }; // soft agent blue (Cursor-ish)
-    static inline const juce::Colour userBubble { 0xff2f2f33 };
-    static inline const juce::Colour aiMuted    { 0xffb4b4bc };
+    // ---- Theme tokens (Splice dark) -----------------------------------------
+    static inline const juce::Colour bg1   { 0xff101216 }; // app backdrop
+    static inline const juce::Colour bg2   { 0xff171a1f }; // sidebar / panel
+    static inline const juce::Colour bg3   { 0xff1f242b }; // control / composer
+    static inline const juce::Colour bg4   { 0xff272d35 }; // hover
+    static inline const juce::Colour bg5   { 0xff303741 }; // pressed / chip
+    static inline const juce::Colour line  { 0xff2a3038 }; // hairline
+    static inline const juce::Colour txt1  { 0xfff2f4f7 }; // primary
+    static inline const juce::Colour txt2  { 0xff98a2b3 }; // secondary
+    static inline const juce::Colour accent{ 0xff3d7eff }; // Splice electric blue
+    static inline const juce::Colour userBubble { 0xff2a313c };
+    static inline const juce::Colour aiMuted    { 0xffb4bcc9 };
 
     static inline const juce::Colour& bg       = bg1;
     static inline const juce::Colour& surface  = bg2;
@@ -31,9 +31,9 @@ public:
     static inline const juce::Colour& muted    = txt2;
     static inline const juce::Colour& accent2  = accent;
 
-    static constexpr float radius = 12.0f;
-    static constexpr float radiusSm = 8.0f;
-    static constexpr float radiusLg = 18.0f;
+    static constexpr float radius = 8.0f;
+    static constexpr float radiusSm = 6.0f;
+    static constexpr float radiusLg = 12.0f;
 
     CustomLookAndFeel()
     {
@@ -120,7 +120,7 @@ public:
         const bool hero = id == "primary";
         g.setFont (font (12.5f, juce::Font::plain));
         g.setColour (b.isEnabled()
-                         ? (hero ? juce::Colour (0xff0e0e10) : txt1)
+                         ? (hero ? juce::Colours::white : txt1)
                          : txt2.withMultipliedAlpha (0.7f));
         g.drawFittedText (b.getButtonText(), b.getLocalBounds().reduced (8, 1),
                           juce::Justification::centred, 1);
@@ -231,10 +231,10 @@ public:
     static juce::Colour colourForInstrument (int typeIndex)
     {
         static const juce::Colour tones[] = {
-            juce::Colour (0xff7c8cff), juce::Colour (0xff9aa4ff),
-            juce::Colour (0xffa8b0c0), juce::Colour (0xff6ee7b7),
-            juce::Colour (0xfff0abfc), juce::Colour (0xfffcd34d),
-            juce::Colour (0xfffda4af)
+            juce::Colour (0xff3d7eff), juce::Colour (0xff6ea8ff),
+            juce::Colour (0xff9aa7bd), juce::Colour (0xff2dd4bf),
+            juce::Colour (0xffc084fc), juce::Colour (0xfffbbf24),
+            juce::Colour (0xfffb7185)
         };
         return tones[juce::jlimit (0, 6, typeIndex)];
     }

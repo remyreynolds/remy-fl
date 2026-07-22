@@ -30,12 +30,12 @@ export function PianoRoll({
     if (!context) return
     context.scale(ratio, ratio)
 
-    context.fillStyle = '#10120f'
+    context.fillStyle = '#10131a'
     context.fillRect(0, 0, width, height)
     const beats = generation.meta.loop_bars * 4
     for (let beat = 0; beat <= beats; beat += 1) {
       const x = (beat / beats) * width
-      context.strokeStyle = beat % 4 === 0 ? '#343832' : '#20231f'
+      context.strokeStyle = beat % 4 === 0 ? '#333a46' : '#1e232c'
       context.lineWidth = beat % 4 === 0 ? 1 : 0.5
       context.beginPath()
       context.moveTo(x, 0)
@@ -44,7 +44,7 @@ export function PianoRoll({
     }
     for (let row = 1; row < 12; row += 1) {
       const y = (row / 12) * height
-      context.strokeStyle = '#1b1e1a'
+      context.strokeStyle = '#1a1f27'
       context.beginPath()
       context.moveTo(0, y)
       context.lineTo(width, y)
@@ -73,17 +73,17 @@ export function PianoRoll({
         pitchBounds,
       )
       for (const note of ghost) {
-        context.fillStyle = 'rgba(116, 125, 118, 0.28)'
+        context.fillStyle = 'rgba(120, 135, 160, 0.28)'
         context.fillRect(note.x, note.y - (compact ? 2 : 4), note.width, compact ? 3 : 7)
       }
     }
     const model = buildPreviewModel(generation, width, height, pitchBounds)
     for (const note of model) {
-      context.fillStyle = `rgba(159, 184, 178, ${note.opacity})`
+      context.fillStyle = `rgba(110, 168, 255, ${note.opacity})`
       context.fillRect(note.x, note.y - (compact ? 2 : 4), note.width, compact ? 3 : 7)
     }
     if (playhead > 0) {
-      context.fillStyle = '#c9d5d1'
+      context.fillStyle = '#cfe0ff'
       context.fillRect(playhead * width, 0, 1.5, height)
     }
   }, [compact, generation, ghostNotes, playhead])
