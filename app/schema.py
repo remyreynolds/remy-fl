@@ -100,6 +100,7 @@ class ContextPack(BaseModel):
     heuristics: List[Dict[str, Any]] = Field(default_factory=list, max_length=5)
     notes_profile: Dict[str, Any] = Field(default_factory=dict)
     sound_type_constraints: Dict[str, Any] = Field(default_factory=dict)
+    theory_guides: List[Dict[str, Any]] = Field(default_factory=list)
     token_estimate: int = 0
     cache_hit: bool = False
 
@@ -126,6 +127,7 @@ class GenerationPlan(BaseModel):
     sound_type: Optional[SoundType] = None
     sound_type_constraints: Dict[str, Any] = Field(default_factory=dict)
     explicit_long_notes: bool = False
+    theory_guide_excerpts: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class NoteJSON(BaseModel):

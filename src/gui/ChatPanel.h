@@ -86,10 +86,10 @@ private:
     juce::Viewport viewport;
     ThreadContent thread;
 
-    juce::TextButton tipMake { "Make chords" };
+    juce::TextButton tipMake { "Full loop" };
     juce::TextButton tipVary { "Vary this" };
-    juce::TextButton tipBass { "Tech house bass" };
-    juce::TextButton tipTheory { "Explain key" };
+    juce::TextButton tipBass { "Bassline" };
+    juce::TextButton tipTheory { "Melody" };
 
     juce::TextEditor input;
     juce::TextButton sendButton { "↑" };

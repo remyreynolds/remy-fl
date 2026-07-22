@@ -41,6 +41,23 @@ chat understands vibe language. Add your own vocabulary here.
 ### `sound_types.json` — instrument/sound-role definitions
 What counts as a stab, pad, pluck, etc. Rarely needs editing.
 
+### `guides/` — music theory & production cheat sheets ⭐
+Shared corpus for the **Python generator** and the **plugin chatbot**.
+
+```
+guides/
+  *.md           curated agent cheat sheets
+  full/*.md      full text extracted from your PDFs
+  pdfs/*.pdf     original PDF binaries (also copied into the plugin knowledge folder)
+```
+
+After editing, restart the brain API and relaunch the plugin so KnowledgeBase
+re-syncs. Chatbot may also use Claude’s own knowledge in addition to these docs.
+
+### `midi-examples/` — cheat-sheet MIDI
+Reference `.mid` loops; measured DNA is already merged into
+`fingerprints.json` (`source: guide_midi`).
+
 ## Rules
 - Valid JSON only — run `python -m json.tool <file>` after editing.
 - After editing, restart the brain API (it seeds from these files).

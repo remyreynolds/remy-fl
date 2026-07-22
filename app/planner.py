@@ -91,8 +91,9 @@ class PlannerStage:
         data["notes_profile"] = context.notes_profile
         data["sound_type"] = intent.sound_type
         data["sound_type_constraints"] = context.sound_type_constraints
+        data["theory_guide_excerpts"] = context.theory_guides
         data["explicit_long_notes"] = any(
-            phrase in intent.request_text.lower()
+            phrase in (intent.request_text or "").lower()
             for phrase in ("long notes", "long sustained", "sustained notes", "legato")
         )
         if intent.sound_type and intent.element != "stack":
@@ -112,7 +113,9 @@ class PlannerStage:
             system=(
                 "You are the Planner. Return a GenerationPlan JSON object and "
                 "never output notes. Session locks beat fingerprint profile, "
-                "taste, then genre defaults. On revise, change only the "
+                "taste, then genre defaults. Obey context.theory_guides "
+                "(chord formulas, melody steps, house theory) when choosing "
+                "progression, swing, and density. On revise, change only the "
                 "revision_target dimension and include revision_diff. "
                 f"Collaborator rule: {COLLAB_INSTRUCTIONS.get(intent.collab_type or '', 'none')}"
                 " Sound-type constraints are hard unless explicit request "
@@ -174,8 +177,12 @@ class PlannerStage:
         citation_ids = [
             str(item.get("id")) for item in context.fingerprints if item.get("id")
         ]
+        guide_ids = [
+            str(item.get("id")) for item in context.theory_guides if item.get("id")
+        ]
         influence = (
             f"groove: fingerprints {','.join(citation_ids) or 'none'}; "
+            f"guides {','.join(guide_ids) or 'none'}; "
             f"harmony: {card.get('subgenre', 'house defaults')}"
         )
         swing = (

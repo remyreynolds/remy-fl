@@ -47,6 +47,7 @@ int main()
     expect (ok.pattern.bpm == 126, "bpm = 126");
     expect (ok.pattern.notes.size() == 3, "3 notes");
     expect (ok.pattern.notes[0].pitchMidi == 33, "first note A1");
+    expect (ok.pattern.lanes().size() == 1, "single-part has one lane");
 
     auto seq = patternToSequence (ok.pattern, 960);
     int noteOns = 0, noteOffs = 0;
@@ -58,6 +59,43 @@ int main()
     }
     expect (noteOns == 3 && noteOffs == 3, "sequence has matching noteOn/noteOff");
     expect (seq.getEventTime (0) == 0.0, "first event at beat 0");
+
+    // --- full-loop parts[] JSON ---
+    const juce::String loopJson = R"({
+      "bpm": 124,
+      "key": "F minor",
+      "bars": 8,
+      "timeSignature": "4/4",
+      "parts": [
+        {
+          "instrument": "chords",
+          "notes": [
+            { "pitch": "F3", "startBeat": 0, "durationBeats": 2, "velocity": 90 },
+            { "pitch": "Ab3", "startBeat": 0, "durationBeats": 2, "velocity": 88 },
+            { "pitch": "C4", "startBeat": 0, "durationBeats": 2, "velocity": 86 }
+          ]
+        },
+        {
+          "instrument": "bass",
+          "notes": [
+            { "pitch": "F1", "startBeat": 0.5, "durationBeats": 0.4, "velocity": 110 }
+          ]
+        },
+        {
+          "instrument": "melody",
+          "notes": [
+            { "pitch": "C5", "startBeat": 0, "durationBeats": 0.5, "velocity": 100 }
+          ]
+        }
+      ]
+    })";
+    auto loop = parseClaudeMidiJson (loopJson);
+    expect (loop.ok, "full-loop JSON parses");
+    expect (loop.pattern.parts.size() == 3, "3 parts");
+    expect (loop.pattern.lanes().size() == 3, "3 lanes");
+    expect (loop.pattern.totalNotes() == 5, "5 total notes");
+    expect (loop.pattern.instrumentSummary().contains ("chords"), "summary includes chords");
+    expect (loop.pattern.instrumentSummary().contains ("bass"), "summary includes bass");
 
     // --- invalid JSON ---
     auto bad = parseClaudeMidiJson ("{ not json");

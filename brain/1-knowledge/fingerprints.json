@@ -1,22 +1,668 @@
 [
-  {"track": "Generic Deep Reference A", "subgenre": "deep house", "bpm": 122, "key": "F minor", "mode": "dorian", "progression": ["Fm9", "Ebmaj7"], "harmonic_rhythm": "2 bars", "bass_archetype": "sub_hold", "swing_pct": 56, "density": {"chords": "med", "melody": "low", "perc": "med"}, "signature_moves": ["lazy offbeat Rhodes stab"]},
-  {"track": "Generic Deep Reference B", "subgenre": "deep house", "bpm": 120, "key": "A minor", "mode": "aeolian", "progression": ["Am9"], "harmonic_rhythm": "static vamp", "bass_archetype": "offbeat", "swing_pct": 57, "density": {"chords": "low", "melody": "low", "perc": "med"}, "signature_moves": ["single chord groove"]},
-  {"track": "Generic Tech Reference A", "subgenre": "tech house", "bpm": 126, "key": "G minor", "mode": "aeolian", "progression": ["Gm", "F"], "harmonic_rhythm": "4 bars", "bass_archetype": "rolling", "swing_pct": 52, "density": {"chords": "low", "melody": "low", "perc": "high"}, "signature_moves": ["rolling 16th bass"]},
-  {"track": "Generic Tech Reference B", "subgenre": "tech house", "bpm": 125, "key": "A minor", "mode": "phrygian", "progression": ["Am"], "harmonic_rhythm": "static", "bass_archetype": "rolling", "swing_pct": 51, "density": {"chords": "low", "melody": "low", "perc": "high"}, "signature_moves": ["dark one-chord tension"]},
-  {"track": "Generic Chicago Reference A", "subgenre": "chicago", "bpm": 124, "key": "C major", "mode": "mixolydian", "progression": ["Cmaj7", "F7", "G7"], "harmonic_rhythm": "1–2 bars", "bass_archetype": "walking", "swing_pct": 54, "density": {"chords": "high", "melody": "med", "perc": "med"}, "signature_moves": ["jacking piano offbeats"]},
-  {"track": "Generic Chicago Reference B", "subgenre": "chicago", "bpm": 122, "key": "F major", "mode": "major", "progression": ["Fmaj7", "Bbmaj7"], "harmonic_rhythm": "2 bars", "bass_archetype": "walking", "swing_pct": 55, "density": {"chords": "high", "melody": "med", "perc": "med"}, "signature_moves": ["gospel IV–iv hint"]},
-  {"track": "Generic French Reference A", "subgenre": "french", "bpm": 120, "key": "D minor", "mode": "dorian", "progression": ["Dm9", "Cmaj7"], "harmonic_rhythm": "4 bars", "bass_archetype": "walking", "swing_pct": 54, "density": {"chords": "med", "melody": "low", "perc": "med"}, "signature_moves": ["disco syncopated bass"]},
-  {"track": "Generic French Reference B", "subgenre": "french", "bpm": 118, "key": "A minor", "mode": "aeolian", "progression": ["Am7", "Gmaj7", "Fmaj7", "E7"], "harmonic_rhythm": "1 bar", "bass_archetype": "walking", "swing_pct": 54, "density": {"chords": "med", "melody": "low", "perc": "med"}, "signature_moves": ["filter-friendly 4-bar phrase"]},
-  {"track": "Generic Prog Reference A", "subgenre": "progressive", "bpm": 124, "key": "E minor", "mode": "aeolian", "progression": ["Em", "C", "G", "D"], "harmonic_rhythm": "2 bars", "bass_archetype": "sub_hold", "swing_pct": 50, "density": {"chords": "med", "melody": "high", "perc": "med"}, "signature_moves": ["emotional 8-bar loop"]},
-  {"track": "Generic Prog Reference B", "subgenre": "progressive", "bpm": 123, "key": "B minor", "mode": "aeolian", "progression": ["Bm", "G", "D", "A"], "harmonic_rhythm": "2 bars", "bass_archetype": "sub_hold", "swing_pct": 51, "density": {"chords": "med", "melody": "high", "perc": "low"}, "signature_moves": ["layered pluck arp space"]},
-  {"track": "Generic Afro Reference A", "subgenre": "afro house", "bpm": 122, "key": "D minor", "mode": "harmonicminor", "progression": ["Dm", "Bb", "C"], "harmonic_rhythm": "2 bars", "bass_archetype": "offbeat", "swing_pct": 53, "density": {"chords": "low", "melody": "med", "perc": "high"}, "signature_moves": ["tribal perc lock"]},
-  {"track": "Generic Afro Reference B", "subgenre": "afro house", "bpm": 124, "key": "A minor", "mode": "aeolian", "progression": ["Am", "F", "G"], "harmonic_rhythm": "2 bars", "bass_archetype": "offbeat", "swing_pct": 54, "density": {"chords": "low", "melody": "med", "perc": "high"}, "signature_moves": ["clave tension"]},
-  {"track": "Generic Garage Reference A", "subgenre": "garage", "bpm": 130, "key": "A minor", "mode": "aeolian", "progression": ["Am7", "G7"], "harmonic_rhythm": "2-bar micro", "bass_archetype": "sub_hold", "swing_pct": 60, "density": {"chords": "med", "melody": "low", "perc": "high"}, "signature_moves": ["chopped chord shuffle"]},
-  {"track": "Generic Garage Reference B", "subgenre": "garage", "bpm": 128, "key": "F minor", "mode": "aeolian", "progression": ["Fm7", "Eb7"], "harmonic_rhythm": "2 bars", "bass_archetype": "sub_hold", "swing_pct": 58, "density": {"chords": "med", "melody": "low", "perc": "high"}, "signature_moves": ["heavy shuffle hats"]},
-  {"track": "Generic Piano House A", "subgenre": "piano house", "bpm": 126, "key": "C major", "mode": "major", "progression": ["Am", "F", "C", "G"], "harmonic_rhythm": "1–2 bars", "bass_archetype": "offbeat", "swing_pct": 50, "density": {"chords": "high", "melody": "high", "perc": "med"}, "signature_moves": ["anthemic octave piano"]},
-  {"track": "Generic Piano House B", "subgenre": "piano house", "bpm": 125, "key": "G major", "mode": "major", "progression": ["Em", "C", "G", "D"], "harmonic_rhythm": "1 bar", "bass_archetype": "offbeat", "swing_pct": 51, "density": {"chords": "high", "melody": "high", "perc": "med"}, "signature_moves": ["hands-up top line"]},
-  {"track": "Generic Deep Reference C", "subgenre": "deep house", "bpm": 121, "key": "C minor", "mode": "dorian", "progression": ["Cm9", "Abmaj7", "Ebmaj7", "Bb"], "harmonic_rhythm": "2 bars", "bass_archetype": "offbeat", "swing_pct": 56, "density": {"chords": "med", "melody": "low", "perc": "med"}, "signature_moves": ["warm pad under stabs"]},
-  {"track": "Generic Tech Reference C", "subgenre": "tech house", "bpm": 127, "key": "E minor", "mode": "aeolian", "progression": ["Em", "D"], "harmonic_rhythm": "4 bars", "bass_archetype": "rolling", "swing_pct": 52, "density": {"chords": "low", "melody": "low", "perc": "high"}, "signature_moves": ["percussive muted bass"]},
-  {"track": "Generic Classic Reference C", "subgenre": "classic", "bpm": 123, "key": "Eb major", "mode": "mixolydian", "progression": ["Eb7", "Ab7", "Bb7"], "harmonic_rhythm": "1 bar", "bass_archetype": "walking", "swing_pct": 55, "density": {"chords": "high", "melody": "med", "perc": "med"}, "signature_moves": ["organ stab answer phrase"]},
-  {"track": "Generic Melodic Reference C", "subgenre": "prog melodic", "bpm": 122, "key": "F# minor", "mode": "aeolian", "progression": ["F#m", "D", "A", "E"], "harmonic_rhythm": "2 bars", "bass_archetype": "sub_hold", "swing_pct": 50, "density": {"chords": "med", "melody": "high", "perc": "low"}, "signature_moves": ["restrained evolving arp"]}
+  {
+    "track": "Generic Deep Reference A",
+    "subgenre": "deep house",
+    "bpm": 122,
+    "key": "F minor",
+    "mode": "dorian",
+    "progression": [
+      "Fm9",
+      "Ebmaj7"
+    ],
+    "harmonic_rhythm": "2 bars",
+    "bass_archetype": "sub_hold",
+    "swing_pct": 56,
+    "density": {
+      "chords": "med",
+      "melody": "low",
+      "perc": "med"
+    },
+    "signature_moves": [
+      "lazy offbeat Rhodes stab"
+    ]
+  },
+  {
+    "track": "Generic Deep Reference B",
+    "subgenre": "deep house",
+    "bpm": 120,
+    "key": "A minor",
+    "mode": "aeolian",
+    "progression": [
+      "Am9"
+    ],
+    "harmonic_rhythm": "static vamp",
+    "bass_archetype": "offbeat",
+    "swing_pct": 57,
+    "density": {
+      "chords": "low",
+      "melody": "low",
+      "perc": "med"
+    },
+    "signature_moves": [
+      "single chord groove"
+    ]
+  },
+  {
+    "track": "Generic Tech Reference A",
+    "subgenre": "tech house",
+    "bpm": 126,
+    "key": "G minor",
+    "mode": "aeolian",
+    "progression": [
+      "Gm",
+      "F"
+    ],
+    "harmonic_rhythm": "4 bars",
+    "bass_archetype": "rolling",
+    "swing_pct": 52,
+    "density": {
+      "chords": "low",
+      "melody": "low",
+      "perc": "high"
+    },
+    "signature_moves": [
+      "rolling 16th bass"
+    ]
+  },
+  {
+    "track": "Generic Tech Reference B",
+    "subgenre": "tech house",
+    "bpm": 125,
+    "key": "A minor",
+    "mode": "phrygian",
+    "progression": [
+      "Am"
+    ],
+    "harmonic_rhythm": "static",
+    "bass_archetype": "rolling",
+    "swing_pct": 51,
+    "density": {
+      "chords": "low",
+      "melody": "low",
+      "perc": "high"
+    },
+    "signature_moves": [
+      "dark one-chord tension"
+    ]
+  },
+  {
+    "track": "Generic Chicago Reference A",
+    "subgenre": "chicago",
+    "bpm": 124,
+    "key": "C major",
+    "mode": "mixolydian",
+    "progression": [
+      "Cmaj7",
+      "F7",
+      "G7"
+    ],
+    "harmonic_rhythm": "1\u20132 bars",
+    "bass_archetype": "walking",
+    "swing_pct": 54,
+    "density": {
+      "chords": "high",
+      "melody": "med",
+      "perc": "med"
+    },
+    "signature_moves": [
+      "jacking piano offbeats"
+    ]
+  },
+  {
+    "track": "Generic Chicago Reference B",
+    "subgenre": "chicago",
+    "bpm": 122,
+    "key": "F major",
+    "mode": "major",
+    "progression": [
+      "Fmaj7",
+      "Bbmaj7"
+    ],
+    "harmonic_rhythm": "2 bars",
+    "bass_archetype": "walking",
+    "swing_pct": 55,
+    "density": {
+      "chords": "high",
+      "melody": "med",
+      "perc": "med"
+    },
+    "signature_moves": [
+      "gospel IV\u2013iv hint"
+    ]
+  },
+  {
+    "track": "Generic French Reference A",
+    "subgenre": "french",
+    "bpm": 120,
+    "key": "D minor",
+    "mode": "dorian",
+    "progression": [
+      "Dm9",
+      "Cmaj7"
+    ],
+    "harmonic_rhythm": "4 bars",
+    "bass_archetype": "walking",
+    "swing_pct": 54,
+    "density": {
+      "chords": "med",
+      "melody": "low",
+      "perc": "med"
+    },
+    "signature_moves": [
+      "disco syncopated bass"
+    ]
+  },
+  {
+    "track": "Generic French Reference B",
+    "subgenre": "french",
+    "bpm": 118,
+    "key": "A minor",
+    "mode": "aeolian",
+    "progression": [
+      "Am7",
+      "Gmaj7",
+      "Fmaj7",
+      "E7"
+    ],
+    "harmonic_rhythm": "1 bar",
+    "bass_archetype": "walking",
+    "swing_pct": 54,
+    "density": {
+      "chords": "med",
+      "melody": "low",
+      "perc": "med"
+    },
+    "signature_moves": [
+      "filter-friendly 4-bar phrase"
+    ]
+  },
+  {
+    "track": "Generic Prog Reference A",
+    "subgenre": "progressive",
+    "bpm": 124,
+    "key": "E minor",
+    "mode": "aeolian",
+    "progression": [
+      "Em",
+      "C",
+      "G",
+      "D"
+    ],
+    "harmonic_rhythm": "2 bars",
+    "bass_archetype": "sub_hold",
+    "swing_pct": 50,
+    "density": {
+      "chords": "med",
+      "melody": "high",
+      "perc": "med"
+    },
+    "signature_moves": [
+      "emotional 8-bar loop"
+    ]
+  },
+  {
+    "track": "Generic Prog Reference B",
+    "subgenre": "progressive",
+    "bpm": 123,
+    "key": "B minor",
+    "mode": "aeolian",
+    "progression": [
+      "Bm",
+      "G",
+      "D",
+      "A"
+    ],
+    "harmonic_rhythm": "2 bars",
+    "bass_archetype": "sub_hold",
+    "swing_pct": 51,
+    "density": {
+      "chords": "med",
+      "melody": "high",
+      "perc": "low"
+    },
+    "signature_moves": [
+      "layered pluck arp space"
+    ]
+  },
+  {
+    "track": "Generic Afro Reference A",
+    "subgenre": "afro house",
+    "bpm": 122,
+    "key": "D minor",
+    "mode": "harmonicminor",
+    "progression": [
+      "Dm",
+      "Bb",
+      "C"
+    ],
+    "harmonic_rhythm": "2 bars",
+    "bass_archetype": "offbeat",
+    "swing_pct": 53,
+    "density": {
+      "chords": "low",
+      "melody": "med",
+      "perc": "high"
+    },
+    "signature_moves": [
+      "tribal perc lock"
+    ]
+  },
+  {
+    "track": "Generic Afro Reference B",
+    "subgenre": "afro house",
+    "bpm": 124,
+    "key": "A minor",
+    "mode": "aeolian",
+    "progression": [
+      "Am",
+      "F",
+      "G"
+    ],
+    "harmonic_rhythm": "2 bars",
+    "bass_archetype": "offbeat",
+    "swing_pct": 54,
+    "density": {
+      "chords": "low",
+      "melody": "med",
+      "perc": "high"
+    },
+    "signature_moves": [
+      "clave tension"
+    ]
+  },
+  {
+    "track": "Generic Garage Reference A",
+    "subgenre": "garage",
+    "bpm": 130,
+    "key": "A minor",
+    "mode": "aeolian",
+    "progression": [
+      "Am7",
+      "G7"
+    ],
+    "harmonic_rhythm": "2-bar micro",
+    "bass_archetype": "sub_hold",
+    "swing_pct": 60,
+    "density": {
+      "chords": "med",
+      "melody": "low",
+      "perc": "high"
+    },
+    "signature_moves": [
+      "chopped chord shuffle"
+    ]
+  },
+  {
+    "track": "Generic Garage Reference B",
+    "subgenre": "garage",
+    "bpm": 128,
+    "key": "F minor",
+    "mode": "aeolian",
+    "progression": [
+      "Fm7",
+      "Eb7"
+    ],
+    "harmonic_rhythm": "2 bars",
+    "bass_archetype": "sub_hold",
+    "swing_pct": 58,
+    "density": {
+      "chords": "med",
+      "melody": "low",
+      "perc": "high"
+    },
+    "signature_moves": [
+      "heavy shuffle hats"
+    ]
+  },
+  {
+    "track": "Generic Piano House A",
+    "subgenre": "piano house",
+    "bpm": 126,
+    "key": "C major",
+    "mode": "major",
+    "progression": [
+      "Am",
+      "F",
+      "C",
+      "G"
+    ],
+    "harmonic_rhythm": "1\u20132 bars",
+    "bass_archetype": "offbeat",
+    "swing_pct": 50,
+    "density": {
+      "chords": "high",
+      "melody": "high",
+      "perc": "med"
+    },
+    "signature_moves": [
+      "anthemic octave piano"
+    ]
+  },
+  {
+    "track": "Generic Piano House B",
+    "subgenre": "piano house",
+    "bpm": 125,
+    "key": "G major",
+    "mode": "major",
+    "progression": [
+      "Em",
+      "C",
+      "G",
+      "D"
+    ],
+    "harmonic_rhythm": "1 bar",
+    "bass_archetype": "offbeat",
+    "swing_pct": 51,
+    "density": {
+      "chords": "high",
+      "melody": "high",
+      "perc": "med"
+    },
+    "signature_moves": [
+      "hands-up top line"
+    ]
+  },
+  {
+    "track": "Generic Deep Reference C",
+    "subgenre": "deep house",
+    "bpm": 121,
+    "key": "C minor",
+    "mode": "dorian",
+    "progression": [
+      "Cm9",
+      "Abmaj7",
+      "Ebmaj7",
+      "Bb"
+    ],
+    "harmonic_rhythm": "2 bars",
+    "bass_archetype": "offbeat",
+    "swing_pct": 56,
+    "density": {
+      "chords": "med",
+      "melody": "low",
+      "perc": "med"
+    },
+    "signature_moves": [
+      "warm pad under stabs"
+    ]
+  },
+  {
+    "track": "Generic Tech Reference C",
+    "subgenre": "tech house",
+    "bpm": 127,
+    "key": "E minor",
+    "mode": "aeolian",
+    "progression": [
+      "Em",
+      "D"
+    ],
+    "harmonic_rhythm": "4 bars",
+    "bass_archetype": "rolling",
+    "swing_pct": 52,
+    "density": {
+      "chords": "low",
+      "melody": "low",
+      "perc": "high"
+    },
+    "signature_moves": [
+      "percussive muted bass"
+    ]
+  },
+  {
+    "track": "Generic Classic Reference C",
+    "subgenre": "classic",
+    "bpm": 123,
+    "key": "Eb major",
+    "mode": "mixolydian",
+    "progression": [
+      "Eb7",
+      "Ab7",
+      "Bb7"
+    ],
+    "harmonic_rhythm": "1 bar",
+    "bass_archetype": "walking",
+    "swing_pct": 55,
+    "density": {
+      "chords": "high",
+      "melody": "med",
+      "perc": "med"
+    },
+    "signature_moves": [
+      "organ stab answer phrase"
+    ]
+  },
+  {
+    "track": "Generic Melodic Reference C",
+    "subgenre": "prog melodic",
+    "bpm": 122,
+    "key": "F# minor",
+    "mode": "aeolian",
+    "progression": [
+      "F#m",
+      "D",
+      "A",
+      "E"
+    ],
+    "harmonic_rhythm": "2 bars",
+    "bass_archetype": "sub_hold",
+    "swing_pct": 50,
+    "density": {
+      "chords": "med",
+      "melody": "high",
+      "perc": "low"
+    },
+    "signature_moves": [
+      "restrained evolving arp"
+    ]
+  },
+  {
+    "track": "CheatSheet MIDI \u2014 Chord Melody 001",
+    "subgenre": "piano house",
+    "bpm": 124,
+    "key": "B\u266d minor",
+    "mode": "aeolian",
+    "progression": [
+      "G\u266d",
+      "Fm",
+      "G\u266d",
+      "A\u266d7",
+      "E\u266dm",
+      "G\u266dmaj7"
+    ],
+    "harmonic_rhythm": "1\u20132 bars",
+    "bass_archetype": "offbeat",
+    "swing_pct": 50.0,
+    "density": {
+      "chords": "high",
+      "melody": "med",
+      "perc": "med"
+    },
+    "signature_moves": [
+      "chords from 5-Steps Melody MIDI pack",
+      "register 49-61"
+    ],
+    "source": "guide_midi",
+    "confidence": "high",
+    "content_hash": "5bdb44405aad"
+  },
+  {
+    "track": "CheatSheet MIDI \u2014 Chord Melody 002",
+    "subgenre": "piano house",
+    "bpm": 124,
+    "key": "G\u266d minor",
+    "mode": "aeolian",
+    "progression": [
+      "Bm",
+      "E",
+      "D\u266dm",
+      "D",
+      "G\u266dm7",
+      "E7"
+    ],
+    "harmonic_rhythm": "1\u20132 bars",
+    "bass_archetype": "offbeat",
+    "swing_pct": 50.0,
+    "density": {
+      "chords": "high",
+      "melody": "med",
+      "perc": "med"
+    },
+    "signature_moves": [
+      "chords from 5-Steps Melody MIDI pack",
+      "register 46-74"
+    ],
+    "source": "guide_midi",
+    "confidence": "high",
+    "content_hash": "8ddd17b3df50"
+  },
+  {
+    "track": "CheatSheet MIDI \u2014 Chord Melody 003",
+    "subgenre": "piano house",
+    "bpm": 124,
+    "key": "B\u266d minor",
+    "mode": "aeolian",
+    "progression": [
+      "G\u266d",
+      "B\u266dm",
+      "B\u266dm",
+      "A\u266d",
+      "A\u266d",
+      "Fm7"
+    ],
+    "harmonic_rhythm": "1\u20132 bars",
+    "bass_archetype": "offbeat",
+    "swing_pct": 50.0,
+    "density": {
+      "chords": "high",
+      "melody": "med",
+      "perc": "med"
+    },
+    "signature_moves": [
+      "chords from 5-Steps Melody MIDI pack",
+      "register 56-77"
+    ],
+    "source": "guide_midi",
+    "confidence": "high",
+    "content_hash": "2c1b0a9448ef"
+  },
+  {
+    "track": "CheatSheet MIDI \u2014 Chord Melody 004",
+    "subgenre": "piano house",
+    "bpm": 124,
+    "key": "E\u266d minor",
+    "mode": "aeolian",
+    "progression": [
+      "A\u266dm",
+      "A\u266dm7",
+      "E\u266dm",
+      "G\u266d",
+      "G\u266d",
+      "A\u266dm"
+    ],
+    "harmonic_rhythm": "1\u20132 bars",
+    "bass_archetype": "offbeat",
+    "swing_pct": 50.0,
+    "density": {
+      "chords": "high",
+      "melody": "med",
+      "perc": "med"
+    },
+    "signature_moves": [
+      "chords from 5-Steps Melody MIDI pack",
+      "register 42-73"
+    ],
+    "source": "guide_midi",
+    "confidence": "high",
+    "content_hash": "569bbf4ed589"
+  },
+  {
+    "track": "CheatSheet MIDI \u2014 Chord Melody 005",
+    "subgenre": "piano house",
+    "bpm": 124,
+    "key": "E\u266d minor",
+    "mode": "aeolian",
+    "progression": [
+      "E\u266dm",
+      "D\u266d",
+      "D\u266d7",
+      "B",
+      "D\u266d",
+      "B\u266dm"
+    ],
+    "harmonic_rhythm": "1\u20132 bars",
+    "bass_archetype": "offbeat",
+    "swing_pct": 50.0,
+    "density": {
+      "chords": "high",
+      "melody": "med",
+      "perc": "med"
+    },
+    "signature_moves": [
+      "chords from 5-Steps Melody MIDI pack",
+      "register 46-66"
+    ],
+    "source": "guide_midi",
+    "confidence": "high",
+    "content_hash": "4f4cf70a651f"
+  },
+  {
+    "track": "CheatSheet MIDI \u2014 Chord Melody 006",
+    "subgenre": "piano house",
+    "bpm": 124,
+    "key": "E\u266d minor",
+    "mode": "aeolian",
+    "progression": [
+      "B",
+      "Bm",
+      "B",
+      "D\u266d",
+      "D\u266dm",
+      "D\u266d"
+    ],
+    "harmonic_rhythm": "1\u20132 bars",
+    "bass_archetype": "offbeat",
+    "swing_pct": 50.0,
+    "density": {
+      "chords": "high",
+      "melody": "med",
+      "perc": "med"
+    },
+    "signature_moves": [
+      "chords from 5-Steps Melody MIDI pack",
+      "register 47-68"
+    ],
+    "source": "guide_midi",
+    "confidence": "high",
+    "content_hash": "f239aa0bfb69"
+  },
+  {
+    "track": "CheatSheet MIDI \u2014 Chord Melody 007",
+    "subgenre": "piano house",
+    "bpm": 124,
+    "key": "E minor",
+    "mode": "aeolian",
+    "progression": [
+      "F",
+      "Fmaj7",
+      "C",
+      "C",
+      "Cmaj7",
+      "G"
+    ],
+    "harmonic_rhythm": "1\u20132 bars",
+    "bass_archetype": "offbeat",
+    "swing_pct": 50.0,
+    "density": {
+      "chords": "high",
+      "melody": "med",
+      "perc": "med"
+    },
+    "signature_moves": [
+      "chords from 5-Steps Melody MIDI pack",
+      "register 52-69"
+    ],
+    "source": "guide_midi",
+    "confidence": "high",
+    "content_hash": "c0447ef47b06"
+  }
 ]

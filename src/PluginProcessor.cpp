@@ -530,13 +530,24 @@ bool AIMidiGenProcessor::undoLastGeneration()
 
 void AIMidiGenProcessor::applyMidiPattern (MidiPattern& pattern, juce::String& errorOut)
 {
-    const auto type = instrumentTypeFromName (pattern.instrument);
-    auto& dest = parts[(size_t) type];
-
-    if (dest.locked)
+    errorOut.clear();
+    auto lanes = pattern.lanes();
+    if (lanes.empty())
     {
-        errorOut = juce::String ("Part \"") + toString (type)
-                 + "\" is locked — unlock it to apply AI MIDI.";
+        errorOut = "AI MIDI pattern had no parts.";
+        return;
+    }
+
+    int unlocked = 0;
+    for (const auto& lane : lanes)
+    {
+        const auto type = instrumentTypeFromName (lane.instrument);
+        if (! parts[(size_t) type].locked)
+            ++unlocked;
+    }
+    if (unlocked == 0)
+    {
+        errorOut = "All target parts are locked — unlock at least one to apply AI MIDI.";
         return;
     }
 
@@ -544,24 +555,41 @@ void AIMidiGenProcessor::applyMidiPattern (MidiPattern& pattern, juce::String& e
 
     projectParams.bpm  = pattern.bpm;
     projectParams.bars = pattern.bars;
-    // Keep the UI project key — do not let the model change it.
     pattern.key = juce::String (formatKeyString (projectParams));
 
-    (void) patternToSequence (pattern, MidiGenerator::ticksPerQuarter);
-    dest = patternToGeneratedPart (pattern);
-
-    if (type == InstrumentType::Drums)
+    juce::StringArray applied;
+    juce::StringArray skipped;
+    for (const auto& lane : lanes)
     {
-        auto& kick = drumKit[(size_t) DrumPiece::Kick];
-        if (! kick.locked)
+        const auto type = instrumentTypeFromName (lane.instrument);
+        auto& dest = parts[(size_t) type];
+        if (dest.locked)
         {
-            kick = dest;
-            kick.type = InstrumentType::Drums;
+            skipped.add (toString (type));
+            continue;
         }
-        rebuildDrumMasterPart();
+
+        dest = patternPartToGeneratedPart (lane, pattern.bpm, pattern.bars);
+        applied.add (toString (type));
+
+        if (type == InstrumentType::Drums)
+        {
+            auto& kick = drumKit[(size_t) DrumPiece::Kick];
+            if (! kick.locked)
+            {
+                kick = dest;
+                kick.type = InstrumentType::Drums;
+            }
+            rebuildDrumMasterPart();
+        }
     }
 
     rebuildPreviewSequences();
+
+    // Soft warning only — generation still succeeded for unlocked parts.
+    if (skipped.size() > 0 && applied.size() > 0)
+        errorOut = "Applied " + applied.joinIntoString (", ")
+                 + " (skipped locked: " + skipped.joinIntoString (", ") + ")";
 }
 
 void AIMidiGenProcessor::generatePart (InstrumentType t, bool recordUndo)
@@ -599,10 +627,15 @@ void AIMidiGenProcessor::regenerateFromAI (const juce::String& prompt,
 
                 juce::String err;
                 applyMidiPattern (r.pattern, err);
-                if (err.isNotEmpty())
+                if (err.isNotEmpty() && ! err.startsWithIgnoreCase ("Applied "))
                 {
                     r.ok = false;
                     r.error = err;
+                }
+                else if (err.isNotEmpty())
+                {
+                    r.assistantText = (r.assistantText.isNotEmpty() ? r.assistantText + "\n" : juce::String())
+                                    + err;
                 }
             }
 
@@ -642,10 +675,15 @@ void AIMidiGenProcessor::transformPartWithAI (InstrumentType t,
             {
                 juce::String err;
                 applyMidiPattern (r.pattern, err);
-                if (err.isNotEmpty())
+                if (err.isNotEmpty() && ! err.startsWithIgnoreCase ("Applied "))
                 {
                     r.ok = false;
                     r.error = err;
+                }
+                else if (err.isNotEmpty())
+                {
+                    r.assistantText = (r.assistantText.isNotEmpty() ? r.assistantText + "\n" : juce::String())
+                                    + err;
                 }
             }
             if (onDone) onDone (r);
@@ -682,11 +720,16 @@ void AIMidiGenProcessor::handleChatTurn (const juce::String& prompt,
 
                 juce::String err;
                 applyMidiPattern (r.pattern, err);
-                if (err.isNotEmpty())
+                if (err.isNotEmpty() && ! err.startsWithIgnoreCase ("Applied "))
                 {
                     r.ok = false;
                     r.generatedMidi = false;
                     r.error = err;
+                }
+                else if (err.isNotEmpty())
+                {
+                    r.assistantText = (r.assistantText.isNotEmpty() ? r.assistantText + "\n" : juce::String())
+                                    + err;
                 }
             }
 

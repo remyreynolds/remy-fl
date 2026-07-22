@@ -11,7 +11,7 @@ R"(You are **Groovewright** in GENERATE mode. Obey the MASTER SYSTEM PROMPT (hou
 
 Return ONLY a single JSON object. No markdown, no code fences, no prose.
 
-Exact schema:
+## Single-part schema (one instrument)
 {
   "bpm": 124,
   "key": "F minor",
@@ -19,11 +19,28 @@ Exact schema:
   "bars": 8,
   "timeSignature": "4/4",
   "notes": [
-    { "pitch": "F3", "startBeat": 0.0, "durationBeats": 0.4, "velocity": 92 },
-    { "pitch": "Ab3", "startBeat": 0.0, "durationBeats": 0.4, "velocity": 88 },
-    { "pitch": "C4", "startBeat": 0.0, "durationBeats": 0.4, "velocity": 90 }
+    { "pitch": "F3", "startBeat": 0.0, "durationBeats": 0.4, "velocity": 92 }
   ]
 }
+
+## Full-loop schema (PREFERRED when user asks for a loop / groove / track / arrangement)
+{
+  "bpm": 124,
+  "key": "F minor",
+  "bars": 8,
+  "timeSignature": "4/4",
+  "parts": [
+    { "instrument": "chords", "notes": [ { "pitch": "F3", "startBeat": 0.0, "durationBeats": 1.0, "velocity": 88 } ] },
+    { "instrument": "bass",   "notes": [ { "pitch": "F1", "startBeat": 0.5, "durationBeats": 0.4, "velocity": 105 } ] },
+    { "instrument": "melody", "notes": [ { "pitch": "C5", "startBeat": 0.0, "durationBeats": 0.5, "velocity": 96 } ] },
+    { "instrument": "drums",  "notes": [ { "pitch": "C2", "startBeat": 0.0, "durationBeats": 0.2, "velocity": 118 } ] }
+  ]
+}
+
+When to use which:
+- User asks for ONE role (bassline, chords only, melody, arp) → single-part schema.
+- User asks for a loop / full groove / track / arrangement / "chords and bass" / "make everything" → parts[] with 2–5 instruments.
+- Default full loop = chords + bass + melody + drums (hats/kick). Add arp or pad if asked.
 
 Hard rules:
 - pitch = note name + octave (A1, C#2, Bb3) — never raw MIDI integers.
@@ -32,9 +49,38 @@ Hard rules:
 - Chords: full voicings — multiple notes with the SAME startBeat (min7/min9 etc.).
 - House DNA: groove, loopability, leave space, swing via slightly late offbeat startBeats.
 - Bass E1–E2, dodge kick downbeats unless sub-hold; chords C3–C5; melody motifs with breath.
+- Drums: GM-ish pitches ok (C2 kick, D2 snare/clap, F#2 closed hat, A#2 open hat) — keep a clear 4-on-the-floor pocket.
+- All parts share the same key/BPM/bars and must loop cleanly together.
 - Stay in project key/BPM/bars when locked. bars ≤ 16 (prefer 4 or 8).
 - Style of references only — never clone copyrighted riffs.
 - JSON only.)";
+}
+
+std::vector<MidiPatternPart> MidiPattern::lanes() const
+{
+    if (! parts.empty())
+        return parts;
+    MidiPatternPart single;
+    single.instrument = instrument;
+    single.notes = notes;
+    return { single };
+}
+
+int MidiPattern::totalNotes() const
+{
+    int n = 0;
+    for (const auto& lane : lanes())
+        n += (int) lane.notes.size();
+    return n;
+}
+
+juce::String MidiPattern::instrumentSummary() const
+{
+    juce::StringArray names;
+    for (const auto& lane : lanes())
+        if (lane.instrument.isNotEmpty())
+            names.addIfNotAlreadyThere (lane.instrument);
+    return names.joinIntoString (", ");
 }
 
 //==============================================================================
@@ -226,25 +272,71 @@ MidiPatternParseResult parseClaudeMidiJson (const juce::String& jsonText)
     p.timeSignature = root.getProperty ("timeSignature", "4/4").toString().trim();
     if (p.timeSignature.isEmpty()) p.timeSignature = "4/4";
 
-    auto notesVar = root.getProperty ("notes", {});
-    auto* arr = notesVar.getArray();
-    if (arr == nullptr || arr->isEmpty())
+    auto parseNotesArray = [] (const juce::var& notesVar, std::vector<PatternNote>& out,
+                               juce::String& error, const juce::String& label) -> bool
     {
-        result.error = "\"notes\" must be a non-empty array.";
-        return result;
-    }
-
-    p.notes.reserve ((size_t) arr->size());
-    for (int i = 0; i < arr->size(); ++i)
-    {
-        PatternNote note;
-        juce::String err;
-        if (! parseNoteObject (arr->getReference (i), note, err))
+        auto* arr = notesVar.getArray();
+        if (arr == nullptr || arr->isEmpty())
         {
-            result.error = "notes[" + juce::String (i) + "]: " + err;
+            error = label + " must be a non-empty array.";
+            return false;
+        }
+        out.clear();
+        out.reserve ((size_t) arr->size());
+        for (int i = 0; i < arr->size(); ++i)
+        {
+            PatternNote note;
+            juce::String err;
+            if (! parseNoteObject (arr->getReference (i), note, err))
+            {
+                error = label + "[" + juce::String (i) + "]: " + err;
+                return false;
+            }
+            out.push_back (note);
+        }
+        return true;
+    };
+
+    auto partsVar = root.getProperty ("parts", {});
+    if (auto* partsArr = partsVar.getArray(); partsArr != nullptr && ! partsArr->isEmpty())
+    {
+        p.parts.reserve ((size_t) partsArr->size());
+        for (int i = 0; i < partsArr->size(); ++i)
+        {
+            const auto& partVar = partsArr->getReference (i);
+            if (! partVar.isObject())
+            {
+                result.error = "parts[" + juce::String (i) + "] must be an object.";
+                return result;
+            }
+            MidiPatternPart lane;
+            lane.instrument = partVar.getProperty ("instrument", "").toString().trim();
+            if (lane.instrument.isEmpty())
+            {
+                result.error = "parts[" + juce::String (i) + "] missing instrument.";
+                return result;
+            }
+            juce::String err;
+            if (! parseNotesArray (partVar.getProperty ("notes", {}), lane.notes, err,
+                                   "parts[" + juce::String (i) + "].notes"))
+            {
+                result.error = err;
+                return result;
+            }
+            p.parts.push_back (std::move (lane));
+        }
+        // Keep legacy top-level fields pointing at the first lane for callers.
+        p.instrument = p.parts.front().instrument;
+        p.notes = p.parts.front().notes;
+    }
+    else
+    {
+        juce::String err;
+        if (! parseNotesArray (root.getProperty ("notes", {}), p.notes, err, "\"notes\""))
+        {
+            result.error = err;
             return result;
         }
-        p.notes.push_back (note);
     }
 
     result.ok = true;
@@ -312,20 +404,28 @@ juce::MidiMessageSequence patternToSequence (const MidiPattern& pattern, int ppq
 
 GeneratedPart patternToGeneratedPart (const MidiPattern& pattern)
 {
-    GeneratedPart part;
-    part.type = instrumentTypeFromName (pattern.instrument);
-    part.notes.reserve (pattern.notes.size());
+    MidiPatternPart lane;
+    lane.instrument = pattern.instrument;
+    lane.notes = pattern.notes;
+    return patternPartToGeneratedPart (lane, pattern.bpm, pattern.bars);
+}
 
-    for (const auto& n : pattern.notes)
+GeneratedPart patternPartToGeneratedPart (const MidiPatternPart& part, int /*bpm*/, int /*bars*/)
+{
+    GeneratedPart out;
+    out.type = instrumentTypeFromName (part.instrument);
+    out.notes.reserve (part.notes.size());
+
+    for (const auto& n : part.notes)
     {
         NoteEvent e;
         e.startBeats  = n.startBeat;
         e.lengthBeats = n.durationBeats;
         e.pitch       = n.pitchMidi;
         e.velocity    = (float) n.velocity / 127.0f;
-        part.notes.push_back (e);
+        out.notes.push_back (e);
     }
-    return part;
+    return out;
 }
 
 juce::String midiToNoteName (int midiNote)

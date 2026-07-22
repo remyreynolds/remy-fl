@@ -68,8 +68,9 @@ class GeneratorStage:
             system=(
                 "Execute the supplied plan exactly. Return NoteJSON at 960 PPQ "
                 "for only the requested element. Humanize swing, velocity waves, "
-                "and tiny timing jitter. You may not contradict the plan; use "
-                "plan_concern if needed. JSON only."
+                "and tiny timing jitter. Obey plan.theory_guide_excerpts "
+                "(chord formulas, melody steps, registers). You may not "
+                "contradict the plan; use plan_concern if needed. JSON only."
             ),
             user=json.dumps(
                 {

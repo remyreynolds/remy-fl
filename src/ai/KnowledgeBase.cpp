@@ -40,7 +40,11 @@ void KnowledgeBase::writeStarterDocIfEmpty()
         juce::File shipped;
         // Standalone / dev: look next to cwd and common relative roots
         const juce::File candidates[] = {
+            juce::File::getCurrentWorkingDirectory().getChildFile ("brain/2-prompts/master-system-prompt.md"),
             juce::File::getCurrentWorkingDirectory().getChildFile ("brain/master-system-prompt.md"),
+            juce::File::getSpecialLocation (juce::File::currentExecutableFile)
+                .getParentDirectory().getParentDirectory().getParentDirectory()
+                .getParentDirectory().getChildFile ("brain/2-prompts/master-system-prompt.md"),
             juce::File::getSpecialLocation (juce::File::currentExecutableFile)
                 .getParentDirectory().getParentDirectory().getParentDirectory()
                 .getParentDirectory().getChildFile ("brain/master-system-prompt.md"),
@@ -231,6 +235,38 @@ Keywords: pop, melodic, radio, catchy, uplift
 - Bass: roots on changes, simple rhythm supporting the chords.
 - Drums: balanced, clap/snare clear, hats supportive not dominant.
 )");
+
+    // Sync curated + full guides from brain/1-knowledge/guides (shared with Python brain).
+    {
+        const juce::File guideRoots[] = {
+            juce::File::getCurrentWorkingDirectory().getChildFile ("brain/1-knowledge/guides"),
+            juce::File::getSpecialLocation (juce::File::currentExecutableFile)
+                .getParentDirectory().getParentDirectory().getParentDirectory()
+                .getParentDirectory().getChildFile ("brain/1-knowledge/guides"),
+        };
+        for (auto& root : guideRoots)
+        {
+            if (! root.isDirectory())
+                continue;
+            for (const auto& entry : juce::RangedDirectoryIterator (root, true, "*.md"))
+            {
+                const auto src = entry.getFile();
+                if (src.getFileName().startsWithIgnoreCase ("00-"))
+                    continue;
+                // Flatten into knowledge root so retrieveForQuery sees one corpus.
+                src.copyFileTo (folder().getChildFile (src.getFileName()));
+            }
+            const auto pdfRoot = root.getChildFile ("pdfs");
+            if (pdfRoot.isDirectory())
+            {
+                const auto pdfDest = folder().getChildFile ("pdfs");
+                pdfDest.createDirectory();
+                for (const auto& entry : juce::RangedDirectoryIterator (pdfRoot, false, "*.pdf"))
+                    entry.getFile().copyFileTo (pdfDest.getChildFile (entry.getFile().getFileName()));
+            }
+            break;
+        }
+    }
 
     // Reload happens in constructor after this.
 }

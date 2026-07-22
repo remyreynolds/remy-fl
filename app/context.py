@@ -5,6 +5,7 @@ import json
 from typing import Any
 
 from app.analysis import analyze_notes
+from app.guides import retrieve_guides
 from app.memory import CognitiveMemory, intent_digest
 from app.schema import ContextPack, Intent
 
@@ -53,6 +54,7 @@ class ContextAssembler:
             "heuristics": [],
             "notes_profile": {},
             "sound_type_constraints": {},
+            "theory_guides": [],
             "cache_hit": False,
         }
         if intent.action == "collaborate" and intent.input_notes:
@@ -101,6 +103,17 @@ class ContextAssembler:
             limit=5,
         )
         pack["heuristics"], used = self._fit_list(heuristics, used)
+
+        # Theory guides from brain/1-knowledge/guides — shared with plugin chatbot.
+        remaining_chars = max(2000, (self.token_budget - used) * 4)
+        guides = retrieve_guides(
+            element=intent.element,
+            query=request_text,
+            limit=4,
+            max_chars=min(9000, remaining_chars),
+        )
+        pack["theory_guides"], used = self._fit_list(guides, used)
+
         pack["token_estimate"] = used
         result = ContextPack.model_validate(pack)
         self.memory.cache_put(session_id, digest, result.model_dump())

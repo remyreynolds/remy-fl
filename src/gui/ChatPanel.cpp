@@ -200,10 +200,10 @@ ChatPanel::ChatPanel()
         b.onClick = [this, prompt] { pushQuick (prompt); };
         addAndMakeVisible (b);
     };
-    wireTip (tipMake, "make a dark tech house chord progression in the project key, 4 bars");
+    wireTip (tipMake, "make a full 8-bar tech house loop with chords, bass, melody, and drums in the project key");
     wireTip (tipVary, "vary this");
-    wireTip (tipBass, "make a groovy tech house bassline in the project key, 4 bars");
-    wireTip (tipTheory, "explain the current project key and suggest a strong progression");
+    wireTip (tipBass, "make a groovy tech house bassline in the project key, 8 bars");
+    wireTip (tipTheory, "make a memorable house topline melody over the current key, 8 bars");
 
     input.setMultiLine (true);
     input.setReturnKeyStartsNewLine (false);
@@ -229,10 +229,11 @@ ChatPanel::ChatPanel()
 
     setDocsStatus ("No theory docs");
     addAssistantMessage ("Hi — I'm your MIDI agent.\n\n"
-                         "Ask about theory, or generate into parts:\n"
-                         "• make a dark tech house progression in A minor\n"
+                         "I can generate full loops or single parts:\n"
+                         "• full loop — chords + bass + melody + drums\n"
+                         "• one role — bassline, chords, melody, arp, pad\n"
                          "• @ MIDI then say vary this / continue this\n\n"
-                         "Brain docs guide what sounds good.");
+                         "Brain docs + Claude guide what sounds good.");
     updateSuggestionVisibility();
 }
 

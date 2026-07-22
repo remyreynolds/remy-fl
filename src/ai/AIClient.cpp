@@ -213,13 +213,18 @@ juce::String AIClient::buildChatSystemPrompt()
     return
 R"(You are **Groovewright**, the house-music MIDI agent inside AI MIDI Gen.
 
-Obey the MASTER SYSTEM PROMPT (THE BRAIN) and any MUSIC THEORY REFERENCES in the user message.
+Obey the MASTER SYSTEM PROMPT (THE BRAIN) and any MUSIC THEORY REFERENCES from
+the local brain knowledge folder (same corpus the MIDI generator uses).
 
 Behavior:
 - Conversational by default — short, producer-to-producer (under ~4 sentences).
+- Prefer local brain docs when they cover the topic.
+- You MAY also use your Claude/model knowledge to fill gaps, explain deeper
+  theory, or compare approaches — clearly prefer brain docs when they conflict.
 - Do NOT output MIDI JSON unless the user clearly asks to make/generate/compose/vary/continue/extend/remix MIDI.
 - Groove over theory. Prefer deep/tech/French/prog/afro/garage/piano house authenticity.
-- When they are ready to generate, suggest a concrete prompt (key + BPM + bars + element).
+- When they are ready to generate, suggest a concrete prompt (key + BPM + bars +
+  roles). Prefer full loops (chords+bass+melody+drums) unless they ask for one part.
 - Cite style influences briefly when relevant.)";
 }
 
@@ -527,10 +532,12 @@ void AIClient::sendChatMessage (const juce::String& userPrompt, ChatCallback cal
     juce::String user = prompt;
     if (retrieval.context.isNotEmpty())
     {
-        user << "\n\n===== MUSIC THEORY REFERENCES (local knowledge) =====\n"
+        user << "\n\n===== MUSIC THEORY REFERENCES (shared brain knowledge) =====\n"
              << retrieval.context
              << "\n===== END REFERENCES =====\n"
-             << "Answer using these docs when relevant. Do not generate MIDI JSON.";
+             << "Prefer these local brain docs when relevant. You may also use your "
+                "Claude knowledge to expand or clarify. Do not generate MIDI JSON "
+                "unless the user asked to generate.";
     }
 
     // For Claude, keep multi-turn history via Anthropic messages body.
@@ -655,10 +662,16 @@ void AIClient::requestMidiPattern (const juce::String& userPrompt,
         juce::String system = buildClaudeMidiSystemPrompt();
         system << "\n\nWorkflow before writing notes:\n"
                   "1) Identify the musical style/genre the user wants.\n"
-                  "2) Find the best-matching MUSIC THEORY REFERENCES by title/content.\n"
-                  "3) Apply those rules (harmony, rhythm, voicing, genre) plus the user's "
-                  "key, BPM, bars, and instrument request.\n"
-                  "4) Return ONLY the MIDI JSON schema — no prose.";
+                  "2) Use the shared brain MUSIC THEORY REFERENCES (same docs as "
+                  "the Python generator) — prefer matching titles/content.\n"
+                  "3) You may also apply Claude music knowledge when the local "
+                  "docs are incomplete, without contradicting those docs.\n"
+                  "4) Decide single-part vs full-loop: if the user wants a loop/"
+                  "groove/track/arrangement or multiple roles, return parts[] "
+                  "with chords+bass+melody+drums (add arp/pad if asked). "
+                  "If they ask for one role only, use the single-part schema.\n"
+                  "5) Apply key, BPM, bars, and instrument request.\n"
+                  "6) Return ONLY the MIDI JSON schema — no prose.";
 
         if (lockKey.isNotEmpty())
         {
@@ -676,14 +689,15 @@ void AIClient::requestMidiPattern (const juce::String& userPrompt,
 
         if (knowledgeCtx.isNotEmpty())
         {
-            user << "\n\n===== MUSIC THEORY REFERENCES (uploaded / local docs) =====\n"
+            user << "\n\n===== MUSIC THEORY REFERENCES (shared brain knowledge) =====\n"
                  << knowledgeCtx
                  << "\n===== END REFERENCES =====\n"
-                 << "Pick the document(s) that best match the requested style, then compose "
-                    "MIDI that follows those rules and the project key/BPM/bars.";
+                 << "These are the same brain guides the generator uses. Prefer them, "
+                    "then fill gaps with Claude knowledge. Compose MIDI that follows "
+                    "those rules and the project key/BPM/bars.";
         }
 
-        auto http = postChatCompletion (system, user, 4096);
+        auto http = postChatCompletion (system, user, 8192);
         if (! http.ok)
         {
             resp.ok = false;
@@ -707,8 +721,8 @@ void AIClient::requestMidiPattern (const juce::String& userPrompt,
             resp.pattern.key = lockKey;
 
         resp.assistantText =
-            "Ready — " + juce::String ((int) resp.pattern.notes.size())
-            + " notes on " + resp.pattern.instrument
+            "Ready — " + juce::String (resp.pattern.totalNotes())
+            + " notes across " + resp.pattern.instrumentSummary()
             + " · " + resp.pattern.key
             + " · " + juce::String (resp.pattern.bpm) + " BPM · "
             + juce::String (resp.pattern.bars) + " bars";

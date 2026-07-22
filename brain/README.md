@@ -19,6 +19,7 @@ and how to add things.
 | I want to… | Go to |
 |---|---|
 | Add a reference track so generations sound like it | `1-knowledge/` → `fingerprints.json` |
+| Add theory / chord / melody cheat sheets | `1-knowledge/guides/` |
 | Change what a subgenre sounds like by default | `1-knowledge/` → `genre_cards.json` |
 | Map a mood word ("dark", "dreamy") to musical settings | `1-knowledge/` → `mood_table.json` |
 | Change how the AI is instructed | `2-prompts/` |

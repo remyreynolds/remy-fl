@@ -16,15 +16,30 @@ struct PatternNote
     int    velocity = 100;
 };
 
-/** Validated Claude MIDI pattern (strict schema). */
+/** One instrument lane inside a pattern (single-part or full-loop). */
+struct MidiPatternPart
+{
+    juce::String instrument { "bass" };
+    std::vector<PatternNote> notes;
+};
+
+/** Validated Claude MIDI pattern (strict schema).
+    Single-part: top-level instrument + notes (legacy).
+    Full loop: parts[] with multiple instruments sharing bpm/key/bars. */
 struct MidiPattern
 {
     int bpm = 120;
     juce::String key { "C minor" };
-    juce::String instrument { "bass" };
+    juce::String instrument { "bass" }; // primary / legacy
     int bars = 4;
     juce::String timeSignature { "4/4" };
-    std::vector<PatternNote> notes;
+    std::vector<PatternNote> notes;     // primary / legacy
+    std::vector<MidiPatternPart> parts; // multi-instrument loop (optional)
+
+    /** Flattened list of parts to apply (uses parts[] if set, else single lane). */
+    std::vector<MidiPatternPart> lanes() const;
+    int totalNotes() const;
+    juce::String instrumentSummary() const;
 };
 
 struct MidiPatternParseResult
@@ -52,6 +67,8 @@ juce::MidiMessageSequence patternToSequence (const MidiPattern& pattern,
 
 /** Apply pattern into a GeneratedPart for the existing drag/export/preview path. */
 GeneratedPart patternToGeneratedPart (const MidiPattern& pattern);
+GeneratedPart patternPartToGeneratedPart (const MidiPatternPart& part,
+                                          int bpm, int bars);
 
 /** Best-effort key string ("A minor") → MusicParams root/scale. */
 void applyKeyStringToParams (const juce::String& key, MusicParams& params);
