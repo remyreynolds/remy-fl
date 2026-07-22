@@ -9,6 +9,21 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
 {
     setLookAndFeel (&lnf);
 
+    // Surface containers — only the active one is visible.
+    addChildComponent (generateSurface);
+    addChildComponent (browseSurface);
+    addChildComponent (chatSurface);
+    addChildComponent (settingsSurface);
+
+    generateTabButton.onClick = [this] { setSurface (Surface::Generate); };
+    browseTabButton.onClick   = [this] { setSurface (Surface::Browse); };
+    chatTabButton.onClick     = [this] { setSurface (Surface::Chat); };
+    settingsTabButton.onClick = [this] { setSurface (Surface::Settings); };
+    addAndMakeVisible (generateTabButton);
+    addAndMakeVisible (browseTabButton);
+    addAndMakeVisible (chatTabButton);
+    addAndMakeVisible (settingsTabButton);
+
     headerLabel.setText ("AI MIDI Gen", juce::dontSendNotification);
     headerLabel.setFont (CustomLookAndFeel::font (16.0f, juce::Font::bold));
     headerLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt1);
@@ -54,7 +69,7 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
     generateAllButton.setComponentID ("primary");
     generateAllButton.setTooltip ("Generate visible / focused parts (or everything when Focus = All)");
     generateAllButton.onClick = [this] { generateFocusedParts(); };
-    addAndMakeVisible (generateAllButton);
+    generateSurface.addAndMakeVisible (generateAllButton);
 
     exportAllButton.setComponentID ("ghost");
     exportAllButton.setTooltip ("Export a multi-track MIDI file of all ready parts");
@@ -71,7 +86,7 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
             refreshPanels();
         }
     };
-    addAndMakeVisible (undoButton);
+    generateSurface.addAndMakeVisible (undoButton);
 
     addSoundsButton.setTooltip ("Import a sound pack folder (kicks, hats, etc.) — auto-sorted for preview");
     addSoundsButton.onClick = [this]
@@ -109,7 +124,7 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
                                             juce::dontSendNotification);
             });
     };
-    addAndMakeVisible (addSoundsButton);
+    browseSurface.addAndMakeVisible (addSoundsButton);
 
     addMidiButton.setTooltip ("Import a folder of .mid loops for Melody / Bass / Chords / etc.");
     addMidiButton.onClick = [this]
@@ -146,13 +161,13 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
                 refreshMidiLoopControls();
             });
     };
-    addAndMakeVisible (addMidiButton);
+    browseSurface.addAndMakeVisible (addMidiButton);
 
     midiPackLabel.setText ("MIDI pack", juce::dontSendNotification);
     midiPackLabel.setFont (CustomLookAndFeel::font (11.5f, juce::Font::bold));
     midiPackLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
     midiPackLabel.setJustificationType (juce::Justification::centredRight);
-    addAndMakeVisible (midiPackLabel);
+    browseSurface.addAndMakeVisible (midiPackLabel);
 
     midiPackCombo.setTextWhenNothingSelected ("No MIDI packs");
     midiPackCombo.setTooltip ("Your imported MIDI packs (Funky House, etc.)");
@@ -161,11 +176,11 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
         if (suppressMidiPackCallback) return;
         refreshMidiLoopControls();
     };
-    addAndMakeVisible (midiPackCombo);
+    browseSurface.addAndMakeVisible (midiPackCombo);
 
     midiKitCombo.setTextWhenNothingSelected ("Kit_1…");
     midiKitCombo.setTooltip ("Matching Bass+Chord+Lead+Guitar set");
-    addAndMakeVisible (midiKitCombo);
+    browseSurface.addAndMakeVisible (midiKitCombo);
 
     loadMidiKitButton.setButtonText ("Load kit");
     loadMidiKitButton.setComponentID ("primary");
@@ -196,7 +211,7 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
                 "Could not load kit: " + (err.isNotEmpty() ? err : juce::String ("nothing found")));
         }
     };
-    addAndMakeVisible (loadMidiKitButton);
+    browseSurface.addAndMakeVisible (loadMidiKitButton);
 
     soundsFolderButton.setTooltip ("Open samples folder in Finder, then rescan");
     soundsFolderButton.onClick = [this]
@@ -207,17 +222,17 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
             processor.autoAssignSamplesFromLibrary();
         refreshSampleControls();
     };
-    addAndMakeVisible (soundsFolderButton);
+    browseSurface.addAndMakeVisible (soundsFolderButton);
 
     samplesStatusLabel.setFont (CustomLookAndFeel::font (11.0f));
     samplesStatusLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
     samplesStatusLabel.setText (processor.samples().statusLine(), juce::dontSendNotification);
-    addAndMakeVisible (samplesStatusLabel);
+    browseSurface.addAndMakeVisible (samplesStatusLabel);
 
     packLabel.setFont (CustomLookAndFeel::font (11.5f, juce::Font::bold));
     packLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
     packLabel.setJustificationType (juce::Justification::centredRight);
-    addAndMakeVisible (packLabel);
+    browseSurface.addAndMakeVisible (packLabel);
 
     packCombo.setTextWhenNothingSelected ("No packs yet");
     packCombo.setTooltip ("Your imported sound packs — selecting one loads those WAVs into preview");
@@ -241,7 +256,7 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
         }
         refreshSampleControls();
     };
-    addAndMakeVisible (packCombo);
+    browseSurface.addAndMakeVisible (packCombo);
 
     previewButton.setComponentID ("ghost");
     previewButton.setClickingTogglesState (true);
@@ -259,7 +274,7 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
     soundLabel.setFont (CustomLookAndFeel::font (11.5f, juce::Font::bold));
     soundLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
     soundLabel.setJustificationType (juce::Justification::centredRight);
-    addAndMakeVisible (soundLabel);
+    generateSurface.addAndMakeVisible (soundLabel);
 
     for (int g = 0; g < (int) GenreMode::NumModes; ++g)
         genreCombo.addItem (toString ((GenreMode) g), g + 1);
@@ -275,7 +290,7 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
             refreshSoundControls();
         }
     };
-    addAndMakeVisible (genreCombo);
+    generateSurface.addAndMakeVisible (genreCombo);
     genreCombo.toFront (false);
 
     keyLabel.setFont (CustomLookAndFeel::font (11.5f, juce::Font::bold));
@@ -315,7 +330,7 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
     focusLabel.setFont (CustomLookAndFeel::font (11.5f, juce::Font::bold));
     focusLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
     focusLabel.setJustificationType (juce::Justification::centredRight);
-    addAndMakeVisible (focusLabel);
+    chatSurface.addAndMakeVisible (focusLabel);
 
     focusCombo.addItem ("All", 1);
     focusCombo.addItem ("Drums only", 2);
@@ -331,12 +346,12 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
         applyWorkspaceFocus();
         resized();
     };
-    addAndMakeVisible (focusCombo);
+    chatSurface.addAndMakeVisible (focusCombo);
 
     sampleFilterLabel.setFont (CustomLookAndFeel::font (11.5f, juce::Font::bold));
     sampleFilterLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
     sampleFilterLabel.setJustificationType (juce::Justification::centredRight);
-    addAndMakeVisible (sampleFilterLabel);
+    browseSurface.addAndMakeVisible (sampleFilterLabel);
 
     sampleFilterCombo.addItem ("All types", 1);
     for (int r = 0; r < (int) SampleRole::NumRoles; ++r)
@@ -348,15 +363,15 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
         if (suppressSampleFilterCallback) return;
         refreshSampleControls();
     };
-    addAndMakeVisible (sampleFilterCombo);
+    browseSurface.addAndMakeVisible (sampleFilterCombo);
 
     apiKeyLabel.setFont (CustomLookAndFeel::font (11.5f, juce::Font::bold));
     apiKeyLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
-    addAndMakeVisible (apiKeyLabel);
+    settingsSurface.addAndMakeVisible (apiKeyLabel);
 
     providerLabel.setFont (CustomLookAndFeel::font (11.5f, juce::Font::bold));
     providerLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
-    addAndMakeVisible (providerLabel);
+    settingsSurface.addAndMakeVisible (providerLabel);
 
     providerCombo.addItem ("Claude", 1);
     providerCombo.addItem ("OpenAI", 2);
@@ -371,11 +386,11 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
         refreshProviderUi();
         refreshPanels();
     };
-    addAndMakeVisible (providerCombo);
+    settingsSurface.addAndMakeVisible (providerCombo);
 
     modelLabel.setFont (CustomLookAndFeel::font (11.5f, juce::Font::bold));
     modelLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
-    addAndMakeVisible (modelLabel);
+    settingsSurface.addAndMakeVisible (modelLabel);
 
     modelCombo.setTooltip ("Claude model — Opus is strongest for musical MIDI; Sonnet 5 is the new default");
     modelCombo.onChange = [this]
@@ -387,7 +402,7 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
             processor.ai().setClaudeModel (modelCombo.getText());
         refreshPanels();
     };
-    addAndMakeVisible (modelCombo);
+    settingsSurface.addAndMakeVisible (modelCombo);
 
     apiKeyField.setPasswordCharacter ((juce::juce_wchar) 0x2022);
     apiKeyField.setTextToShowWhenEmpty (processor.ai().apiKeyPlaceholder(),
@@ -407,11 +422,11 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
         }
         refreshPanels();
     };
-    addAndMakeVisible (apiKeyField);
+    settingsSurface.addAndMakeVisible (apiKeyField);
     refreshProviderUi();
 
-    addAndMakeVisible (midiRoll);
-    addAndMakeVisible (chordDashboard);
+    generateSurface.addAndMakeVisible (midiRoll);
+    generateSurface.addAndMakeVisible (chordDashboard);
 
     chatPanel.onSend = [this] (juce::String prompt) { handlePrompt (prompt); };
     chatPanel.onRequestMidiAttach = [this] () -> juce::String
@@ -460,7 +475,7 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
         processor.ai().knowledge().folder().revealToUser();
     };
     chatPanel.setDocsStatus (processor.ai().knowledge().statusLine());
-    addAndMakeVisible (chatPanel);
+    chatSurface.addAndMakeVisible (chatPanel);
 
     for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
     {
@@ -516,7 +531,7 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
                                                      juce::String (toString (type)));
         };
 
-        addAndMakeVisible (*panel);
+        generateSurface.addAndMakeVisible (*panel);
         panels[(size_t) t] = std::move (panel);
     }
 
@@ -571,7 +586,7 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
                                                  processor.params(),
                                                  "Drums");
     };
-    addAndMakeVisible (drumKitPanel);
+    generateSurface.addAndMakeVisible (drumKitPanel);
 
     // Packs already on disk — assign their WAVs as the preview instruments.
     if (processor.samples().size() > 0)
@@ -624,6 +639,18 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
     setResizable (true, true);
     setResizeLimits (980, 780, 2000, 1400);
     setSize (1440, 960);
+    setSurface (Surface::Generate);
+}
+
+void AIMidiGenEditor::setSurface (Surface s)
+{
+    currentSurface = s;
+    generateSurface.setVisible (s == Surface::Generate);
+    browseSurface.setVisible (s == Surface::Browse);
+    chatSurface.setVisible (s == Surface::Chat);
+    settingsSurface.setVisible (s == Surface::Settings);
+    resized();
+    repaint();
 }
 
 AIMidiGenEditor::~AIMidiGenEditor()
@@ -1261,194 +1288,200 @@ void AIMidiGenEditor::paint (juce::Graphics& g)
 {
     CustomLookAndFeel::fillBackdrop (g, getLocalBounds());
 
-    // Slim top bars — Cursor/ChatGPT chrome, not DAW panels.
     auto r = getLocalBounds();
-    auto topBar = r.removeFromTop (52);
+
+    // Header strip
+    auto headerBar = r.removeFromTop (46);
     g.setColour (CustomLookAndFeel::bg2);
-    g.fillRect (topBar);
+    g.fillRect (headerBar);
     g.setColour (CustomLookAndFeel::line.withAlpha (0.7f));
-    g.drawHorizontalLine (topBar.getBottom() - 1, 0.0f, (float) getWidth());
+    g.drawHorizontalLine (headerBar.getBottom() - 1, 0.0f, (float) getWidth());
 
-    auto settingsBar = r.removeFromTop (84);
-    g.setColour (CustomLookAndFeel::bg1);
-    g.fillRect (settingsBar);
-    g.setColour (CustomLookAndFeel::line.withAlpha (0.45f));
-    g.drawHorizontalLine (settingsBar.getBottom() - 1, 0.0f, (float) getWidth());
-
-    // Tiny readiness chip (replaces heavy dial)
-    if (! meterValueLabel.isVisible())
-    {
-        auto chip = juce::Rectangle<float> ((float) getWidth() - 86.0f, 14.0f, 70.0f, 24.0f);
-        g.setColour (CustomLookAndFeel::bg3);
-        g.fillRoundedRectangle (chip, 12.0f);
-        g.setColour (CustomLookAndFeel::txt2);
-        g.setFont (CustomLookAndFeel::font (11.0f));
-        g.drawText (juce::String (readyParts) + "/7 ready", chip.toNearestInt(),
-                    juce::Justification::centred);
-    }
+    // Footer strip
+    auto footerBar = r.removeFromBottom (46);
+    g.setColour (CustomLookAndFeel::bg2);
+    g.fillRect (footerBar);
+    g.setColour (CustomLookAndFeel::line.withAlpha (0.7f));
+    g.drawHorizontalLine (footerBar.getY(), 0.0f, (float) getWidth());
 }
 
 void AIMidiGenEditor::resized()
 {
     auto r = getLocalBounds();
 
-    // ---- Top app bar ----
-    auto topBar = r.removeFromTop (52).reduced (16, 10);
-    headerLabel.setBounds (topBar.removeFromLeft (120));
-    topBar.removeFromLeft (10);
-    subheaderLabel.setBounds (topBar.removeFromLeft (120));
+    // ---- Header strip: logo + tabs left, API status right ----
+    auto header = r.removeFromTop (46).reduced (12, 7);
+    headerLabel.setBounds (header.removeFromLeft (110));
+    header.removeFromLeft (6);
+    subheaderLabel.setBounds (header.removeFromLeft (110));
+    header.removeFromLeft (10);
 
-    generateAllButton.setBounds (topBar.removeFromRight (108).withSizeKeepingCentre (108, 32));
-    topBar.removeFromRight (6);
-    exportAllButton.setBounds (topBar.removeFromRight (88).withSizeKeepingCentre (88, 32));
-    topBar.removeFromRight (6);
-    undoButton.setBounds (topBar.removeFromRight (64).withSizeKeepingCentre (64, 32));
-    topBar.removeFromRight (6);
-    previewButton.setBounds (topBar.removeFromRight (84).withSizeKeepingCentre (84, 32));
-    topBar.removeFromRight (14);
+    generateTabButton.setBounds (header.removeFromLeft (92).withSizeKeepingCentre (92, 30));
+    header.removeFromLeft (6);
+    browseTabButton.setBounds (header.removeFromLeft (80).withSizeKeepingCentre (80, 30));
+    header.removeFromLeft (6);
+    chatTabButton.setBounds (header.removeFromLeft (64).withSizeKeepingCentre (64, 30));
+    header.removeFromLeft (6);
+    settingsTabButton.setBounds (header.removeFromLeft (40).withSizeKeepingCentre (40, 30));
 
-    auto bpmArea = topBar.removeFromRight (128).withSizeKeepingCentre (128, 32);
-    bpmPlus.setBounds (bpmArea.removeFromRight (28));
-    bpmArea.removeFromRight (2);
+    apiStatusLabel.setBounds (header.removeFromRight (220));
+
+    // ---- Footer strip: global musical context ----
+    auto footer = r.removeFromBottom (46).reduced (12, 7);
+    keyLabel.setBounds (footer.removeFromLeft (30));
+    rootCombo.setBounds (footer.removeFromLeft (48).reduced (0, 1));
+    footer.removeFromLeft (4);
+    scaleCombo.setBounds (footer.removeFromLeft (100).reduced (0, 1));
+    footer.removeFromLeft (14);
+
+    auto bpmArea = footer.removeFromLeft (128);
     bpmMinus.setBounds (bpmArea.removeFromLeft (28));
     bpmArea.removeFromLeft (2);
+    bpmPlus.setBounds (bpmArea.removeFromRight (28));
+    bpmArea.removeFromRight (2);
     auto valueCol = bpmArea;
     bpmValue.setBounds (valueCol.removeFromTop (16));
     bpmLabel.setBounds (valueCol);
 
-    // ---- Compact settings strip (2 rows) ----
-    auto settings = r.removeFromTop (84).reduced (16, 8);
+    exportAllButton.setBounds (footer.removeFromRight (88).withSizeKeepingCentre (88, 30));
+    footer.removeFromRight (6);
+    previewButton.setBounds (footer.removeFromRight (84).withSizeKeepingCentre (84, 30));
 
-    auto row1 = settings.removeFromTop (30);
-    providerLabel.setBounds (row1.removeFromLeft (22));
-    providerCombo.setBounds (row1.removeFromLeft (78).reduced (0, 1));
-    row1.removeFromLeft (6);
-    modelLabel.setBounds (row1.removeFromLeft (42));
-    modelCombo.setBounds (row1.removeFromLeft (140).reduced (0, 1));
-    row1.removeFromLeft (8);
-    apiKeyLabel.setBounds (row1.removeFromLeft (48));
-    apiKeyField.setBounds (row1.removeFromLeft (110));
-    row1.removeFromLeft (6);
-    apiStatusLabel.setBounds (row1.removeFromLeft (160));
-    row1.removeFromLeft (8);
-    keyLabel.setBounds (row1.removeFromLeft (28));
-    rootCombo.setBounds (row1.removeFromLeft (48).reduced (0, 1));
-    row1.removeFromLeft (4);
-    scaleCombo.setBounds (row1.removeFromLeft (100).reduced (0, 1));
-    row1.removeFromLeft (8);
-    soundLabel.setBounds (row1.removeFromLeft (40));
-    genreCombo.setBounds (row1.removeFromLeft (110).reduced (0, 1));
+    // ---- Active surface fills the middle ----
+    generateSurface.setBounds (r);
+    browseSurface.setBounds (r);
+    chatSurface.setBounds (r);
+    settingsSurface.setBounds (r);
 
-    settings.removeFromTop (6);
-    auto row2 = settings.removeFromTop (30);
-    midiPackLabel.setBounds (row2.removeFromLeft (40));
-    midiPackCombo.setBounds (row2.removeFromLeft (juce::jmin (220, row2.getWidth() / 3)).reduced (0, 1));
-    row2.removeFromLeft (6);
-    midiKitCombo.setBounds (row2.removeFromLeft (86).reduced (0, 1));
-    row2.removeFromLeft (4);
-    loadMidiKitButton.setBounds (row2.removeFromLeft (74).withSizeKeepingCentre (74, 26));
-    row2.removeFromLeft (4);
-    addMidiButton.setBounds (row2.removeFromLeft (72).withSizeKeepingCentre (72, 26));
-    row2.removeFromLeft (10);
-    packLabel.setText ("Sounds", juce::dontSendNotification);
-    packLabel.setBounds (row2.removeFromLeft (48));
-    packCombo.setBounds (row2.removeFromLeft (140).reduced (0, 1));
-    row2.removeFromLeft (6);
-    addSoundsButton.setBounds (row2.removeFromLeft (84).withSizeKeepingCentre (84, 26));
-    row2.removeFromLeft (4);
-    soundsFolderButton.setBounds (row2.removeFromLeft (56).withSizeKeepingCentre (56, 26));
-    row2.removeFromLeft (8);
-    focusLabel.setBounds (row2.removeFromLeft (36));
-    focusCombo.setBounds (row2.removeFromLeft (120).reduced (0, 1));
-    row2.removeFromLeft (6);
-    sampleFilterLabel.setBounds (row2.removeFromLeft (32));
-    sampleFilterCombo.setBounds (row2.removeFromLeft (90).reduced (0, 1));
-    row2.removeFromLeft (6);
-    samplesStatusLabel.setBounds (row2);
-
-    // Hide the old dial label — chip is painted instead
+    // Hide the old dial label
     meterValueLabel.setBounds ({});
 
-    // ---- Main workspace: chat-first (Cursor) ----
-    auto chatW = juce::jlimit (360, 520, r.getWidth() * 38 / 100);
-    chatPanel.setBounds (r.removeFromLeft (chatW));
-    r.removeFromLeft (0);
+    layoutGenerateSurface();
+    layoutBrowseSurface();
+    layoutChatSurface();
+    layoutSettingsSurface();
+}
 
-    auto workspace = r.reduced (12, 10);
+void AIMidiGenEditor::layoutGenerateSurface()
+{
+    auto r = generateSurface.getLocalBounds().reduced (12, 10);
 
-    auto rollArea = workspace.removeFromTop (juce::jmax (120, workspace.getHeight() * 22 / 100));
-    midiRoll.setBounds (rollArea);
-    workspace.removeFromTop (8);
-    auto dashArea = workspace.removeFromTop (juce::jmax (88, workspace.getHeight() * 18 / 100));
-    chordDashboard.setBounds (dashArea);
-    workspace.removeFromTop (10);
+    // ---- Right rail: genre + generate all + undo ----
+    auto right = r.removeFromRight (190);
+    right.removeFromLeft (8);
+    auto genreRow = right.removeFromTop (28);
+    soundLabel.setBounds (genreRow.removeFromLeft (44));
+    genreCombo.setBounds (genreRow.reduced (0, 1));
+    right.removeFromTop (8);
+    generateAllButton.setBounds (right.removeFromTop (36));
+    right.removeFromTop (8);
+    undoButton.setBounds (right.removeFromTop (30));
 
-    struct Slot
-    {
-        juce::Component* comp = nullptr;
-        int preferredH = 200;
-        bool wide = false;
-    };
-    std::vector<Slot> slots;
+    // ---- Left column: instrument panels stacked ----
+    auto left = r.removeFromLeft (juce::jlimit (280, 400, r.getWidth() * 36 / 100));
+    r.removeFromLeft (8);
+
+    const int gap = 8;
+    int y = left.getY();
     for (int i = 0; i < (int) InstrumentType::NumTypes; ++i)
     {
         const auto type = (InstrumentType) i;
+        if (type == InstrumentType::Drums) continue;
+        if (panels[(size_t) i] == nullptr) continue;
         if (! isTypeInFocus (type)) continue;
 
-        if (type == InstrumentType::Drums)
-        {
-            slots.push_back ({ &drumKitPanel, drumKitPanel.preferredHeight(),
-                               focusCombo.getSelectedId() == 2 });
-        }
-        else if (panels[(size_t) i] != nullptr)
-        {
-            slots.push_back ({ panels[(size_t) i].get(),
-                               panels[(size_t) i]->preferredHeight(), false });
-        }
+        const int h = juce::jmax (34, juce::jmin (panels[(size_t) i]->preferredHeight(),
+                                                  left.getBottom() - y));
+        panels[(size_t) i]->setBounds (left.getX(), y, left.getWidth(), h);
+        y += h + gap;
     }
 
+    // ---- Center: midiRoll on top, chordDashboard / drumKitPanel below ----
+    auto center = r;
+    auto rollArea = center.removeFromTop (juce::jmax (120, center.getHeight() * 34 / 100));
+    midiRoll.setBounds (rollArea);
+    center.removeFromTop (8);
+    auto dashArea = center.removeFromTop (juce::jmax (88, center.getHeight() * 30 / 100));
+    chordDashboard.setBounds (dashArea);
+    center.removeFromTop (8);
+    drumKitPanel.setBounds (center);
+}
+
+void AIMidiGenEditor::layoutBrowseSurface()
+{
+    auto r = browseSurface.getLocalBounds().reduced (16, 12);
     const int gap = 8;
-    const int cols = (slots.size() == 1) ? 1 : (slots.size() <= 2 ? 2 : 3);
-    const int cellW = cols > 0 ? (workspace.getWidth() - gap * (cols - 1)) / cols : workspace.getWidth();
 
-    int x = workspace.getX();
-    int y = workspace.getY();
-    int col = 0;
-    int rowMaxH = 0;
+    auto row1 = r.removeFromTop (30);
+    midiPackLabel.setBounds (row1.removeFromLeft (70));
+    row1.removeFromLeft (6);
+    midiPackCombo.setBounds (row1.removeFromLeft (juce::jmin (260, row1.getWidth())).reduced (0, 1));
+    r.removeFromTop (gap);
 
-    for (auto& slot : slots)
-    {
-        if (slot.comp == nullptr) continue;
+    auto row2 = r.removeFromTop (30);
+    row2.removeFromLeft (76);
+    midiKitCombo.setBounds (row2.removeFromLeft (120).reduced (0, 1));
+    row2.removeFromLeft (6);
+    loadMidiKitButton.setBounds (row2.removeFromLeft (80).withSizeKeepingCentre (80, 28));
+    row2.removeFromLeft (6);
+    addMidiButton.setBounds (row2.removeFromLeft (80).withSizeKeepingCentre (80, 28));
+    r.removeFromTop (gap);
 
-        if (slot.wide || cols == 1)
-        {
-            if (col > 0)
-            {
-                y += rowMaxH + gap;
-                x = workspace.getX();
-                col = 0;
-                rowMaxH = 0;
-            }
-            const int h = juce::jmin (slot.preferredH, workspace.getBottom() - y);
-            slot.comp->setBounds (x, y, workspace.getWidth(), juce::jmax (34, h));
-            y += juce::jmax (34, h) + gap;
-            continue;
-        }
+    auto row3 = r.removeFromTop (30);
+    packLabel.setText ("Sounds", juce::dontSendNotification);
+    packLabel.setBounds (row3.removeFromLeft (70));
+    row3.removeFromLeft (6);
+    packCombo.setBounds (row3.removeFromLeft (200).reduced (0, 1));
+    row3.removeFromLeft (6);
+    addSoundsButton.setBounds (row3.removeFromLeft (94).withSizeKeepingCentre (94, 28));
+    row3.removeFromLeft (6);
+    soundsFolderButton.setBounds (row3.removeFromLeft (64).withSizeKeepingCentre (64, 28));
+    r.removeFromTop (gap);
 
-        const int h = juce::jmax (34, slot.preferredH);
-        slot.comp->setBounds (x, y, cellW, h);
-        rowMaxH = juce::jmax (rowMaxH, h);
-        ++col;
-        x += cellW + gap;
+    auto row4 = r.removeFromTop (30);
+    sampleFilterLabel.setBounds (row4.removeFromLeft (70));
+    row4.removeFromLeft (6);
+    sampleFilterCombo.setBounds (row4.removeFromLeft (140).reduced (0, 1));
+    r.removeFromTop (gap);
 
-        if (col >= cols)
-        {
-            y += rowMaxH + gap;
-            x = workspace.getX();
-            col = 0;
-            rowMaxH = 0;
-        }
-    }
+    auto row5 = r.removeFromTop (28);
+    samplesStatusLabel.setBounds (row5);
+}
+
+void AIMidiGenEditor::layoutChatSurface()
+{
+    auto r = chatSurface.getLocalBounds().reduced (12, 10);
+
+    auto row1 = r.removeFromTop (30);
+    focusLabel.setBounds (row1.removeFromLeft (50));
+    row1.removeFromLeft (6);
+    focusCombo.setBounds (row1.removeFromLeft (180).reduced (0, 1));
+    r.removeFromTop (8);
+
+    chatPanel.setBounds (r);
+}
+
+void AIMidiGenEditor::layoutSettingsSurface()
+{
+    auto r = settingsSurface.getLocalBounds().reduced (16, 12);
+    const int gap = 8;
+
+    auto row1 = r.removeFromTop (30);
+    providerLabel.setBounds (row1.removeFromLeft (70));
+    row1.removeFromLeft (6);
+    providerCombo.setBounds (row1.removeFromLeft (140).reduced (0, 1));
+    r.removeFromTop (gap);
+
+    auto row2 = r.removeFromTop (30);
+    modelLabel.setBounds (row2.removeFromLeft (70));
+    row2.removeFromLeft (6);
+    modelCombo.setBounds (row2.removeFromLeft (200).reduced (0, 1));
+    r.removeFromTop (gap);
+
+    auto row3 = r.removeFromTop (30);
+    apiKeyLabel.setBounds (row3.removeFromLeft (70));
+    row3.removeFromLeft (6);
+    apiKeyField.setBounds (row3.removeFromLeft (260));
 }
 
 } // namespace aimidi

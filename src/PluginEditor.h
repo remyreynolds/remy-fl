@@ -25,6 +25,13 @@ public:
     void resized() override;
 
 private:
+    enum class Surface { Generate, Browse, Chat, Settings };
+
+    void setSurface (Surface s);
+    void layoutGenerateSurface();
+    void layoutBrowseSurface();
+    void layoutChatSurface();
+    void layoutSettingsSurface();
     void handlePrompt (const juce::String& prompt);
     void handlePartTransform (InstrumentType type, const juce::String& mode);
     void refreshPanels();
@@ -45,6 +52,19 @@ private:
 
     AIMidiGenProcessor& processor;
     CustomLookAndFeel   lnf;
+
+    // Surface containers (declared before their children so they outlive them)
+    Surface currentSurface = Surface::Generate;
+    juce::Component generateSurface;
+    juce::Component browseSurface;
+    juce::Component chatSurface;
+    juce::Component settingsSurface;
+
+    // Header tabs
+    juce::TextButton generateTabButton { "GENERATE" };
+    juce::TextButton browseTabButton { "BROWSE" };
+    juce::TextButton chatTabButton { "CHAT" };
+    juce::TextButton settingsTabButton { "⚙" };
 
     juce::Label   headerLabel;
     juce::Label   subheaderLabel;
