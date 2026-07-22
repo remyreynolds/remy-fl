@@ -89,7 +89,8 @@ instrument.
 - AI prompt schema still only knows the coarse `"Drums"` instrument name —
   asking Claude to "just change the hi-hats" won't yet target one piece.
   Fine-grained AI control over individual drum pieces is a later iteration.
-- API key still not persisted across restarts (Keychain — tracked separately).
+- API key is persisted via `~/Library/Application Support/AIMidiGen/` settings
+  (env var `ANTHROPIC_API_KEY` still wins when set).
 
 ## Phase 1.2 — Remy CRM UI pass
 
@@ -199,3 +200,23 @@ packs were audition-only, and style choice gave no sound-design guidance.
 - g++ harness extended: SongPlan determinism + voice-leading distance,
   chordAtBeat clamping, critic repairs (chord-tone snap, bass clamp, kick
   clash nudge) and lock-respect — all green on Linux. JUCE build on Mac.
+
+---
+
+## Phase 1.5 — Merge with the parallel UI/AI session (2026-07-22)
+
+Merged this branch's musical engine (SongPlan, Critic, MIDI DNA, style-driven
+generator) with the parallel session's product work: 4-surface UI
+(Generate/Browse/Chat/Settings), undo snapshots, built-in preview synth +
+genre timbres, sample & MIDI-loop libraries, host BPM sync + host MIDI out,
+multi-track export, and the note-JSON AI path (Claude returns validated
+patterns; chat converses by default). Resolutions of note:
+- `MidiGenerator` keeps the style-preset engine (the randomized progression
+  rewrite was dropped) but adopts the motif-based melody, per-part MIDI
+  channels in `toSequence`, and `writeTempMultiTrackMidiFile`.
+- The critic now also runs after `regenerateFromAI`, `transformPartWithAI`,
+  and `handleChatTurn` pattern applies; its summary is posted to chat.
+- MIDI DNA lives as a ghost button on the Generate surface rail; one undo
+  step covers the whole DNA regenerate.
+- Genre changes (combo or auto-detect in chat) post the style's "Sound
+  picks" patch guidance to the chat panel.

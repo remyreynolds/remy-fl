@@ -192,23 +192,49 @@ GeneratedPart MidiGenerator::generateMelody (const MusicParams& p)
     const auto ivals = scaleIntervals (p.scale);
     const int base   = 12 * (p.octave + 1) + rootPc;
 
-    const double stepBeats = p.rhythmComplexity > 0.6f ? 0.25 : 0.5; // 1/16 vs 1/8
-    const int totalSteps   = (int) std::round ((p.bars * 4.0) / stepBeats);
-    int lastDeg = 0;
+    // Harmony anchor: bar starts resolve to the shared song plan's degree,
+    // so the hook agrees with chords/bass/arp by construction (the critic
+    // then also snaps any stray strong-beat notes to chord tones).
+    const auto& st  = findStyle (p.genre);
+    const auto plan = buildSongPlan (p, st.chordTones);
 
-    for (int s = 0; s < totalSteps; ++s)
+    const double stepBeats = (p.rhythmComplexity > 0.6f || rand01() < 0.35f) ? 0.25 : 0.5;
+    const int stepsPerBar  = (int) std::round (4.0 / stepBeats);
+
+    // Build a one-bar rhythmic motif, then repeat it with variation —
+    // this is what makes it sound like a hook instead of dice rolls.
+    std::vector<bool> motif ((size_t) stepsPerBar, false);
+    const float density = 0.25f + p.noteDensity * 0.5f;
+    for (int s = 0; s < stepsPerBar; ++s)
+        motif[(size_t) s] = rand01() < density;
+    motif[0] = motif[0] || rand01() < 0.6f; // usually anchor the downbeat
+
+    int lastDeg = randInt (0, (int) ivals.size() - 1);
+
+    for (int bar = 0; bar < p.bars; ++bar)
     {
-        const float density = 0.3f + p.noteDensity * 0.6f;
-        if (rand01() > density) continue; // rest
+        const int chordDeg = plan.degrees[(size_t) std::min (bar,
+                                (int) plan.degrees.size() - 1)];
+        for (int s = 0; s < stepsPerBar; ++s)
+        {
+            bool play = motif[(size_t) s];
+            if (rand01() < 0.15f) play = ! play; // per-bar variation
+            if (! play) continue;
 
-        // Random walk over scale degrees for singable contour.
-        const int move = (int) std::round ((rand01() - 0.5f) * 4.0f * (0.5f + p.complexity));
-        lastDeg = std::clamp (lastDeg + move, 0, (int) ivals.size() * 2);
-        const int oct  = lastDeg / (int) ivals.size();
-        const int note = base + oct * 12 + ivals[(size_t) (lastDeg % (int) ivals.size())];
+            if (s == 0 && rand01() < 0.7f)
+                lastDeg = chordDeg; // resolve to the chord degree at bar starts
+            else
+            {
+                const int move = (int) std::round ((rand01() - 0.5f) * 4.0f * (0.5f + p.complexity));
+                lastDeg = std::clamp (lastDeg + move, 0, (int) ivals.size() * 2);
+            }
 
-        part.notes.push_back ({ s * stepBeats, stepBeats * 0.9, note,
-                                0.6f + rand01() * 0.3f });
+            const int oct  = lastDeg / (int) ivals.size();
+            const int note = base + oct * 12 + ivals[(size_t) (lastDeg % (int) ivals.size())];
+            const double gate = 0.6 + rand01() * 0.35;
+            part.notes.push_back ({ bar * 4.0 + s * stepBeats, stepBeats * gate,
+                                    note, 0.6f + rand01() * 0.3f });
+        }
     }
     return part;
 }
@@ -421,7 +447,7 @@ int MidiGenerator::validate (GeneratedPart& part, const MusicParams& p)
 juce::MidiMessageSequence MidiGenerator::toSequence (const GeneratedPart& part, double /*bpm*/)
 {
     juce::MidiMessageSequence seq;
-    const int ch = part.type == InstrumentType::Drums ? 10 : 1;
+    const int ch = midiChannelFor (part.type);
 
     for (const auto& n : part.notes)
     {
@@ -455,6 +481,47 @@ juce::File MidiGenerator::writeTempMidiFile (const GeneratedPart& part,
     dir.createDirectory();
     auto file = dir.getChildFile (baseName + "_" +
                     juce::String (juce::Time::currentTimeMillis()) + ".mid");
+
+    if (auto out = std::unique_ptr<juce::FileOutputStream> (file.createOutputStream()))
+    {
+        out->setPosition (0);
+        out->truncate();
+        mf.writeTo (*out);
+        out->flush();
+    }
+    return file;
+}
+
+juce::File MidiGenerator::writeTempMultiTrackMidiFile (
+    const std::vector<const GeneratedPart*>& parts,
+    const MusicParams& params,
+    const juce::String& baseName)
+{
+    juce::MidiFile mf;
+    mf.setTicksPerQuarterNote (ticksPerQuarter);
+
+    juce::MidiMessageSequence tempo;
+    tempo.addEvent (juce::MidiMessage::tempoMetaEvent (
+        (int) std::round (60'000'000.0 / params.bpm)), 0.0);
+    tempo.addEvent (juce::MidiMessage::textMetaEvent (3, "AI MIDI Gen"), 0.0);
+    mf.addTrack (tempo);
+
+    for (auto* part : parts)
+    {
+        if (part == nullptr || part->notes.empty())
+            continue;
+
+        auto seq = toSequence (*part, params.bpm);
+        seq.addEvent (juce::MidiMessage::textMetaEvent (3, toString (part->type)), 0.0);
+        seq.updateMatchedPairs();
+        mf.addTrack (seq);
+    }
+
+    auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                   .getChildFile ("AIMidiGen");
+    dir.createDirectory();
+    auto file = dir.getChildFile (baseName + "_" +
+                                  juce::String (juce::Time::currentTimeMillis()) + ".mid");
 
     if (auto out = std::unique_ptr<juce::FileOutputStream> (file.createOutputStream()))
     {

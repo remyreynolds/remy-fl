@@ -1,0 +1,150 @@
+from flpianoroll import *
+
+import os
+import sys
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+
+from midi_agent_core import (
+    FileBridgeTimeout,
+    RelayError,
+    RelayUnavailable,
+    find_track,
+    read_roll,
+    send_generate,
+    write_track,
+)
+
+
+ELEMENTS = ["Chords", "Bass", "Melody", "Arp", "Perc"]
+MODES = ["Generate", "Fix groove", "Reharmonize", "Continue", "Bass under"]
+SOUND_TYPES = ["Auto", "Pluck", "Pad", "Keys", "Stab", "Sub", "Lead"]
+
+
+def createDialog():
+    d = ScriptDialog(
+        "MIDI Agent",
+        "Describe what to generate. Notes are written to THIS piano "
+        "roll/channel. Bass under tip: run this from your bass channel's "
+        "piano roll instead.",
+    )
+    d.AddInputText("Prompt", "deep house chords, 8 bars, F minor")
+    d.AddInputCombo("Element", "Chords,Bass,Melody,Arp,Perc", 0)
+    d.AddInputCombo(
+        "Mode",
+        "Generate,Fix groove,Reharmonize,Continue,Bass under",
+        0,
+    )
+    d.AddInputCombo("Sound type", "Auto,Pluck,Pad,Keys,Stab,Sub,Lead", 0)
+    d.AddInputKnobInt("Bars", 8, 1, 16)
+    if hasattr(d, "AddInputCheckbox"):
+        d.AddInputCheckbox("write into THIS piano roll", True)
+    else:
+        d.AddInputCombo("write into THIS piano roll", "Off,On", 1)
+    return d
+
+
+def apply(form):
+    try:
+        prompt = str(form.GetInputValue("Prompt")).strip()
+        element = _combo_value(form.GetInputValue("Element"), ELEMENTS)
+        mode = _combo_value(form.GetInputValue("Mode"), MODES)
+        sound_type = _combo_value(
+            form.GetInputValue("Sound type"), SOUND_TYPES
+        )
+        bars = max(1, min(16, int(form.GetInputValue("Bars"))))
+        if not prompt:
+            Utils.ShowMessage("Enter a MIDI generation prompt.")
+            return
+
+        input_notes = []
+        selected_indices = []
+        selection_only = False
+        if mode != "Generate":
+            roll_notes, selected_indices = read_roll(score)
+            if not roll_notes:
+                Utils.ShowMessage(
+                    "This action needs notes in the piano roll "
+                    "(select some or leave all)."
+                )
+                return
+            selection_only = bool(selected_indices)
+            input_notes = (
+                [roll_notes[index] for index in selected_indices]
+                if selection_only
+                else roll_notes
+            )
+        if mode == "Bass under" and not _checkbox_value(
+            form.GetInputValue("write into THIS piano roll")
+        ):
+            Utils.ShowMessage(
+                "Bass under was not written. Tip: run this from your bass "
+                "channel's piano roll instead."
+            )
+            return
+
+        payload = {
+            "prompt": prompt,
+            "element": element,
+            "bars": bars,
+            "session_id": None,
+            "mode": mode,
+            "input_notes": input_notes,
+            "selection_only": selection_only,
+            "roll_ppq": int(score.PPQ),
+            "sound_type": None
+            if sound_type == "Auto"
+            else sound_type.lower(),
+        }
+        contract = send_generate(payload, SCRIPT_DIR)
+        track = find_track(contract, element)
+        replace_indices = None
+        if mode in ("Fix groove", "Reharmonize"):
+            replace_indices = (
+                selected_indices
+                if selection_only
+                else list(range(len(input_notes)))
+            )
+        write_track(
+            score,
+            Note,
+            track,
+            "Replace" if mode == "Generate" else "Add",
+            replace_indices=replace_indices,
+        )
+    except FileBridgeTimeout as exc:
+        Utils.ShowMessage(str(exc))
+    except RelayUnavailable:
+        Utils.ShowMessage(
+            "MIDI Agent relay isn't running. Start it with: midiagent-relay"
+        )
+    except RelayError as exc:
+        Utils.ShowMessage(str(exc))
+    except Exception as exc:
+        Utils.ShowMessage("MIDI Agent error: %s" % str(exc))
+
+
+def _combo_value(value, choices):
+    try:
+        index = int(value)
+        if 0 <= index < len(choices):
+            return choices[index]
+    except (TypeError, ValueError):
+        pass
+    text = str(value)
+    for choice in choices:
+        if text.lower() == choice.lower():
+            return choice
+    return choices[0]
+
+
+def _checkbox_value(value):
+    if isinstance(value, bool):
+        return value
+    try:
+        return int(value) != 0
+    except (TypeError, ValueError):
+        return str(value).strip().lower() in ("true", "on", "yes", "1")
+

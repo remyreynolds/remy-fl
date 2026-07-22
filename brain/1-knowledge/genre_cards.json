@@ -1,0 +1,10 @@
+[
+  {"subgenre":"deep_house","default_bpm":122,"default_key":"F minor","default_mode":"dorian","swing_pct":56,"harmony":"minor9/11, slow harmonic rhythm","bass":"offbeat or sub-hold","rhythm":"lazy stabs and shuffled hats","avoid":"overfilled melodies"},
+  {"subgenre":"tech_house","default_bpm":126,"default_key":"A minor","default_mode":"aeolian","swing_pct":52,"harmony":"static minor or two-chord tension","bass":"rolling 16ths, few distinct pitches","rhythm":"kick-led pocket and dense percussion","avoid":"long ornate progressions"},
+  {"subgenre":"classic","default_bpm":124,"default_key":"C major","default_mode":"mixolydian","swing_pct":55,"harmony":"dominant 7/9 and gospel movement","bass":"walking or syncopated","rhythm":"jacking piano/organ offbeats","avoid":"over-quantized velocity"},
+  {"subgenre":"french","default_bpm":120,"default_key":"D minor","default_mode":"dorian","swing_pct":54,"harmony":"disco-derived 7/9 voicings","bass":"syncopated walking","rhythm":"filter-friendly four-bar phrases","avoid":"busy top-line under filter movement"},
+  {"subgenre":"prog_melodic","default_bpm":123,"default_key":"E minor","default_mode":"aeolian","swing_pct":50,"harmony":"emotional four-chord arcs","bass":"sustained sub with restrained movement","rhythm":"straight pocket with evolving arp","avoid":"early peak energy"},
+  {"subgenre":"afro","default_bpm":123,"default_key":"D minor","default_mode":"harmonicminor","swing_pct":54,"harmony":"sparse modal triads","bass":"offbeat, call-and-response","rhythm":"clave-aware layered percussion","avoid":"clashing dense chord stabs"},
+  {"subgenre":"garage","default_bpm":130,"default_key":"A minor","default_mode":"aeolian","swing_pct":60,"harmony":"chopped 7th chords","bass":"sub-hold with syncopated pickups","rhythm":"heavy shuffle and broken accents","avoid":"straight 16th hats"},
+  {"subgenre":"piano_house","default_bpm":126,"default_key":"C major","default_mode":"major","swing_pct":51,"harmony":"anthemic diatonic progression","bass":"offbeat root/fifth","rhythm":"octave piano with breathing gaps","avoid":"constant maximal density"}
+]

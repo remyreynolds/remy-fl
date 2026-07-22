@@ -44,11 +44,21 @@ target_sources(AIMidiGen PRIVATE
     src/PluginProcessor.cpp
     src/PluginEditor.cpp
     src/ai/AIClient.cpp
+    src/ai/MidiPattern.cpp
+    src/ai/KnowledgeBase.cpp
     src/engine/MidiDna.cpp
     src/engine/MidiGenerator.cpp
+    src/engine/PreviewSounds.cpp
+    src/engine/PreviewSynth.cpp
+    src/engine/ChordAnalysis.cpp
+    src/engine/SampleLibrary.cpp
+    src/engine/MidiLibrary.cpp
     src/gui/ChatPanel.cpp
     src/gui/InstrumentPanel.cpp
+    src/gui/InstrumentLane.cpp
     src/gui/DrumKitPanel.cpp
+    src/gui/MidiRollView.cpp
+    src/gui/ChordDashboardView.cpp
 )
 
 target_include_directories(AIMidiGen PRIVATE src)
@@ -70,3 +80,18 @@ target_link_libraries(AIMidiGen PRIVATE
     juce::juce_recommended_lto_flags
     juce::juce_recommended_warning_flags
 )
+
+# ---------------------------------------------------------------------------
+# Focused unit tests (MidiPattern parse / pitch / sequence)
+# ---------------------------------------------------------------------------
+add_executable(MidiPatternTests
+    tests/MidiPatternTests.cpp
+    src/ai/MidiPattern.cpp
+)
+target_include_directories(MidiPatternTests PRIVATE src)
+target_link_libraries(MidiPatternTests PRIVATE
+    juce::juce_audio_basics
+    juce::juce_core
+)
+enable_testing()
+add_test (NAME MidiPatternTests COMMAND MidiPatternTests)

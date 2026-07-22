@@ -1,0 +1,68 @@
+[
+  {
+    "type": "pluck",
+    "gate_min_pct": 25,
+    "gate_max_pct": 50,
+    "density_bias": 1,
+    "register": [48, 84],
+    "polyphony_cap": 3,
+    "voicing": "three notes or mono",
+    "extra": "16th-note friendly, staccato"
+  },
+  {
+    "type": "pad",
+    "gate_min_pct": 95,
+    "gate_max_pct": 100,
+    "overlap_ticks": 30,
+    "density_bias": -1,
+    "register": [48, 72],
+    "polyphony_min": 4,
+    "polyphony_cap": 5,
+    "voicing": "four to five notes, add 9 or 11",
+    "extra": "changes only with harmonic rhythm"
+  },
+  {
+    "type": "keys",
+    "gate_min_pct": 60,
+    "gate_max_pct": 85,
+    "density_bias": 0,
+    "register": [48, 72],
+    "polyphony_cap": 4,
+    "voicing": "three to four notes, inversions",
+    "timing_jitter_multiplier": 1.5,
+    "extra": "human timing jitter x1.5"
+  },
+  {
+    "type": "stab",
+    "fixed_ticks": 120,
+    "gate_max_pct": 50,
+    "density_bias": 0,
+    "register": [48, 72],
+    "polyphony_cap": 3,
+    "voicing": "three notes, no root",
+    "offbeat_weight": 2,
+    "extra": "offbeat placement weight x2"
+  },
+  {
+    "type": "sub",
+    "gate_min_pct": 90,
+    "gate_max_pct": 90,
+    "density_bias": -1,
+    "register": [28, 40],
+    "polyphony_cap": 1,
+    "mono": true,
+    "voicing": "mono only",
+    "extra": "no notes above 40 ever"
+  },
+  {
+    "type": "lead",
+    "gate_min_pct": 40,
+    "gate_max_pct": 70,
+    "density_bias": 0,
+    "register": [60, 84],
+    "polyphony_cap": 1,
+    "mono": true,
+    "voicing": "mono",
+    "extra": "motif repetition rules apply"
+  }
+]

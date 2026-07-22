@@ -5,6 +5,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <array>
 #include <random>
+#include <vector>
 
 namespace aimidi
 {
@@ -48,6 +49,12 @@ public:
                                          const MusicParams& params,
                                          const juce::String& baseName);
 
+    /** Multi-track .mid: one track per non-empty part (MIDI Agent-style export). */
+    static juce::File writeTempMultiTrackMidiFile (
+        const std::vector<const GeneratedPart*>& parts,
+        const MusicParams& params,
+        const juce::String& baseName = "AIMidiGen_All");
+
     static constexpr int ticksPerQuarter = 960;
 
     /** Point the generator at MIDI-pack DNA (or nullptr to clear). The DNA
@@ -69,6 +76,7 @@ private:
 
     std::mt19937 rng { std::random_device{}() };
     float rand01() { return std::uniform_real_distribution<float> (0.f, 1.f) (rng); }
+    int   randInt (int lo, int hi) { return std::uniform_int_distribution<int> (lo, hi) (rng); }
 };
 
 } // namespace aimidi

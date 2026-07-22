@@ -1,59 +1,162 @@
 #pragma once
 
 #include "../engine/MusicInstructions.h"
+#include "MidiPattern.h"
+#include "KnowledgeBase.h"
 #include <juce_core/juce_core.h>
 #include <functional>
+#include <vector>
 
 namespace aimidi
 {
-/** Talks to the Claude Messages API. Given a natural-language prompt plus the
-    current project params, it returns an *updated* MusicParams (and a list of
-    which instruments to (re)generate). The AI never emits raw MIDI — only the
-    structured instructions the spec mandates.
-
-    The request runs on a background thread; the callback is delivered on the
-    JUCE message thread so the UI can update safely. */
+/** LLM client (Claude / OpenAI): conversational chat by default; MIDI generation
+    when the user asks to make/vary/continue something. Knowledge docs are
+    retrieved and injected for both paths. */
 class AIClient
 {
 public:
+    enum class Provider { Claude, OpenAI };
+
     struct Response
     {
         bool ok = false;
-        juce::String assistantText;               // chat reply to show the user
-        MusicParams params;                        // updated musical params
-        std::vector<InstrumentType> toGenerate;    // parts the AI wants to (re)make
+        juce::String assistantText;
+        MusicParams params;
+        std::vector<InstrumentType> toGenerate;
         juce::String error;
     };
 
+    struct PatternResponse
+    {
+        bool ok = false;
+        juce::String assistantText;
+        juce::String error;
+        MidiPattern pattern;
+        int knowledgeDocsUsed = 0;
+        juce::StringArray matchedDocTitles;
+    };
+
+    struct ChatResponse
+    {
+        bool ok = false;
+        juce::String assistantText;
+        juce::String error;
+        juce::StringArray matchedDocTitles;
+    };
+
+    /** Result of routing a chat box message. */
+    struct TurnResponse
+    {
+        bool ok = false;
+        bool generatedMidi = false;
+        juce::String assistantText;
+        juce::String error;
+        MidiPattern pattern;
+        juce::StringArray matchedDocTitles;
+    };
+
     using Callback = std::function<void (Response)>;
+    using PatternCallback = std::function<void (PatternResponse)>;
+    using ChatCallback = std::function<void (ChatResponse)>;
+    using TurnCallback = std::function<void (TurnResponse)>;
 
     AIClient();
 
-    void setApiKey (const juce::String& key) { apiKey = key; }
-    bool hasApiKey() const { return apiKey.isNotEmpty(); }
+    void setProvider (Provider p);
+    Provider getProvider() const { return provider; }
+    void setApiKey (const juce::String& key);
+    bool hasApiKey() const;
+    bool apiKeyFromEnvironment() const { return loadedFromEnv; }
+    juce::String apiKeyPlaceholder() const;
+    juce::String providerDisplayName() const;
 
-    /** Send a user prompt. `current` is the project state; `lockedMask` marks
-        instruments the AI must not touch. */
+    void setClaudeModel (const juce::String& modelId);
+    juce::String getClaudeModel() const { return claudeModel; }
+    void setOpenAiModel (const juce::String& modelId);
+    juce::String getOpenAiModel() const { return openAiModel; }
+
+    KnowledgeBase& knowledge() { return knowledgeBase; }
+    const KnowledgeBase& knowledge() const { return knowledgeBase; }
+
+    /** True when the user is asking to create / transform MIDI (vs just chatting). */
+    static bool looksLikeMidiGenerateRequest (const juce::String& prompt);
+
+    /** Chat box entry point: converse OR generate MIDI.
+        If forcedKey is set (e.g. "F minor"), MIDI generation must stay in that key. */
+    void handleUserTurn (const juce::String& userPrompt,
+                         const juce::String& forcedKey,
+                         TurnCallback callback);
+
+    void requestMidiPattern (const juce::String& userPrompt,
+                             const juce::String& forcedKey,
+                             PatternCallback callback);
+
+    /** Vary or continue an existing part (MIDI Agent-style). */
+    void requestMidiTransform (const juce::String& mode, // "vary" | "continue"
+                               const juce::String& instrumentName,
+                               const juce::String& midiContextJson,
+                               const juce::String& forcedKey,
+                               PatternCallback callback);
+
+    void sendChatMessage (const juce::String& userPrompt, ChatCallback callback);
+
     void sendPrompt (const juce::String& userPrompt,
                      const MusicParams& current,
                      const std::vector<bool>& lockedMask,
                      Callback callback);
 
-    /** Offline fallback: no network — parse a few keywords locally so the
-        plugin still does something useful without an API key. */
     static Response localFallback (const juce::String& userPrompt,
                                    const MusicParams& current);
 
 private:
-    juce::String apiKey;
-    juce::String model { "claude-sonnet-4-6" };
+    struct Turn
+    {
+        bool fromUser = true;
+        juce::String text;
+    };
 
-    static juce::String buildSystemPrompt();
+    struct LlmHttpResult
+    {
+        bool ok = false;
+        juce::String text;
+        juce::String error;
+        int statusCode = 0;
+    };
+
+    Provider provider = Provider::Claude;
+    juce::String anthropicApiKey;
+    juce::String openAiApiKey;
+    bool loadedFromEnv = false;
+    juce::String claudeModel { "claude-sonnet-5" };
+    juce::String openAiModel { "gpt-4o" };
+    KnowledgeBase knowledgeBase;
+    std::vector<Turn> history; // short conversational memory
+
+    void pushHistory (bool fromUser, const juce::String& text);
+    juce::var buildChatMessagesBody (const juce::String& system,
+                                     const juce::String& latestUserWithRefs) const;
+
+    juce::String activeApiKey() const;
+    juce::String activeModel() const;
+    LlmHttpResult postChatCompletion (const juce::String& system,
+                                      const juce::String& user,
+                                      int maxTokens) const;
+
+    static juce::String buildChatSystemPrompt();
+    static juce::String buildLegacySystemPrompt();
     static juce::var    buildRequestBody (const juce::String& system,
                                           const juce::String& user,
-                                          const juce::String& model);
-    static Response     parseResponse (const juce::String& raw,
-                                       const MusicParams& fallback);
+                                          const juce::String& model,
+                                          int maxTokens);
+    static juce::var    buildOpenAiRequestBody (const juce::String& system,
+                                                const juce::String& user,
+                                                const juce::String& model,
+                                                int maxTokens);
+    static Response     parseLegacyResponse (const juce::String& raw,
+                                             const MusicParams& fallback);
+    static juce::String extractTextContent (const juce::String& anthropicRaw);
+    static juce::String extractOpenAiTextContent (const juce::String& openAiRaw);
+    static juce::String describeHttpError (int statusCode, const juce::String& body);
 };
 
 } // namespace aimidi
