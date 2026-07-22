@@ -37,6 +37,11 @@ private:
     juce::TextButton generateAllButton { "Generate All" };
     juce::TextEditor apiKeyField;
     juce::Label   apiKeyLabel { {}, "Claude API key:" };
+    juce::Label   styleLabel  { {}, "Style:" };
+    juce::ComboBox styleBox;
+
+    void applyStylePreset (int styleIndex);
+    void syncStyleBoxToParams();
 
     ChatPanel chatPanel;
     std::array<std::unique_ptr<InstrumentPanel>, (size_t) InstrumentType::NumTypes> panels;

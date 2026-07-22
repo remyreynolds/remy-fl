@@ -113,3 +113,49 @@ Remy CRM visual language instead of generic audio-plugin styling.
 ### Validation
 - Could not run CMake in this container because `cmake` is not installed here.
   Build validation still needs to happen on the Mac toolchain.
+
+## Phase 1.3 — Modern house style engine (8 sub-genre presets, 10-piece kit)
+
+### Why
+"House" isn't one groove in 2026. The engine had a single hardcoded pattern
+(four-on-floor + offbeat bass + i-VI-III-VII). This pass makes style a
+first-class, data-driven concept so the plugin generates idiomatic ideas in
+the lanes that are actually hot right now.
+
+### Added
+- `engine/StylePresets.h` (JUCE-free, header-only): 8 presets —
+  Tech House, Bass House, Afro House, Melodic House, Deep House,
+  Organic House, UK Garage, Classic House. Each carries bpm, swing, default
+  scale, chord voicing depth (triad→11th), chord rhythm mode, bass style,
+  a 4-bar progression, and per-piece 16-step drum groove templates with
+  per-step trigger probability. `findStyle()`/`findStyleOrNull()` match
+  names, aliases and artist cues ("john summit"→Tech House,
+  "keinemusik"→Afro House, "anyma"→Melodic House, "2-step"→UK Garage).
+- `DrumPiece` extended 5→10: + Ride, Shaker, Rim, CongaHi, CongaLo (GM
+  notes 51/70/37/63/64). All processor/preview/panel code scales off the
+  enum, so the kit UI and per-piece lock/mute/drag picked them up unchanged.
+- `MidiGenerator`:
+  - Drums are now groove-template driven (velocity steps × probability ×
+    energy dial) instead of hardcoded; UK Garage gets a real 2-step kick.
+  - 5 bass behaviours (offbeat 8ths, rolling tech-house 16ths with octave
+    pops, sustained subs, afro syncopated stabs, UKG 2-step sub with
+    root→5th→b7 movement).
+  - 4 chord modes (stabs / offbeat piano stabs / sustained / plucked) with
+    voicings up to 11ths via the extended `theory::diatonicChord(tones)`.
+  - Arp follows the style's progression; pad always renders the sustained
+    voicing (no longer derived by filtering the chord part).
+  - 1/16 shuffle swing added in `validate()` (needed for UKG/afro feel).
+- `AIClient`: system prompt now builds its genre list directly from
+  `allStyles()` (prompt and engine can't drift); offline fallback detects
+  styles by keyword and adopts the preset's bpm/swing/scale.
+- `PluginEditor`: Style combo-box in the header — switching a style adopts
+  its defaults and regenerates all unlocked parts; selection stays in sync
+  when the AI changes genre via chat.
+- `install-mac.sh`: one-command clone+build+install for the Mac
+  (`bash <(curl -fsSL …/install-mac.sh)`).
+
+### Validation
+- Engine headers compile clean with `g++ -std=c++17 -Wall -Wextra` (Linux)
+  and a sanity harness verifies: 8 styles, valid bpm/swing/progressions,
+  kick patterns present, chord builds per style scale, keyword lookups, and
+  the 10-piece GM mapping. Full JUCE build still happens on the Mac.

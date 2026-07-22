@@ -1,6 +1,7 @@
 #pragma once
 
 #include "MusicInstructions.h"
+#include "StylePresets.h"
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <array>
 #include <random>
@@ -21,8 +22,9 @@ public:
     /** Generate a single instrument part. Respects params.seed for variety. */
     GeneratedPart generate (InstrumentType type, const MusicParams& params);
 
-    /** Generate the full 5-piece drum kit (kick/snare/clap/closed hat/open
-        hat) as separate, independently-editable parts. Each piece is already
+    /** Generate the full drum kit (kick/snare/clap/hats/ride/shaker/rim/
+        congas) as separate, independently-editable parts driven by the
+        current style preset's groove templates. Each piece is already
         validated (scale N/A for drums, but swing/humanize/de-overlap applied). */
     std::array<GeneratedPart, (size_t) DrumPiece::NumPieces>
         generateDrumKit (const MusicParams& params);
@@ -48,6 +50,7 @@ public:
 
 private:
     GeneratedPart generateChords (const MusicParams&);
+    GeneratedPart generateChordsWithMode (const MusicParams&, ChordMode, int tones);
     GeneratedPart generateBass   (const MusicParams&);
     GeneratedPart generateMelody (const MusicParams&);
     GeneratedPart generateDrums  (const MusicParams&);

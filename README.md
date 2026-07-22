@@ -4,6 +4,26 @@
 instrument → drag straight into FL Studio. The plugin outputs **MIDI only**;
 your own instruments make the sound.
 
+**8 built-in modern house styles** (each with its own groove, bass behaviour,
+chord voicings and BPM): Tech House · Bass House · Afro House · Melodic House
+· Deep House · Organic House · UK Garage · Classic House. Pick from the Style
+menu, or just tell the chat "make it sound like John Summit" / "Keinemusik
+vibes" — the AI maps artists and slang to the right style.
+
+---
+
+## Quickest path: one command
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/remyreynolds/ai-midi-gen/main/install-mac.sh)
+```
+
+That installs the build tools if missing, clones/updates the source, builds
+VST3 + AU + Standalone, and copies the plugin where FL Studio can find it.
+Then in FL Studio: Options → Manage plugins → **Find plugins**.
+
+The manual route follows if you prefer to see every step.
+
 ---
 
 ## 0. One-time install (from zero, macOS)

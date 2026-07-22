@@ -63,6 +63,26 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
     };
     addAndMakeVisible (apiKeyField);
 
+    // Style selector: the 8 modern-house presets from the engine. Switching
+    // style adopts its bpm/swing/scale and regenerates all unlocked parts —
+    // one click, fresh ideas in that lane.
+    styleLabel.setFont (CustomLookAndFeel::font (11.5f, juce::Font::bold));
+    styleLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::muted);
+    addAndMakeVisible (styleLabel);
+
+    {
+        int id = 1;
+        for (const auto& st : allStyles())
+            styleBox.addItem (st.name, id++);
+    }
+    styleBox.onChange = [this]
+    {
+        const int idx = styleBox.getSelectedItemIndex();
+        if (idx >= 0) applyStylePreset (idx);
+    };
+    addAndMakeVisible (styleBox);
+    syncStyleBoxToParams();
+
     chatPanel.onSend = [this] (juce::String prompt) { handlePrompt (prompt); };
     addAndMakeVisible (chatPanel);
 
@@ -144,6 +164,35 @@ AIMidiGenEditor::~AIMidiGenEditor()
     setLookAndFeel (nullptr);
 }
 
+void AIMidiGenEditor::applyStylePreset (int styleIndex)
+{
+    const auto& styles = allStyles();
+    if (styleIndex < 0 || styleIndex >= (int) styles.size()) return;
+    const auto& st = styles[(size_t) styleIndex];
+
+    auto& p = processor.params();
+    p.genre = st.name;
+    p.bpm   = st.bpm;
+    p.swing = st.swing;
+    p.scale = st.scale;
+
+    for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
+        processor.generatePart ((InstrumentType) t);
+    refreshPanels();
+}
+
+void AIMidiGenEditor::syncStyleBoxToParams()
+{
+    const auto& styles = allStyles();
+    const auto& current = findStyle (processor.params().genre);
+    for (size_t i = 0; i < styles.size(); ++i)
+        if (&styles[i] == &current)
+        {
+            styleBox.setSelectedItemIndex ((int) i, juce::dontSendNotification);
+            break;
+        }
+}
+
 void AIMidiGenEditor::handlePrompt (const juce::String& prompt)
 {
     chatPanel.setBusy (true);
@@ -177,6 +226,7 @@ void AIMidiGenEditor::refreshPanels()
     meterValueLabel.setText (juce::String (readyParts) + "/7", juce::dontSendNotification);
     apiStatusLabel.setText (processor.ai().hasApiKey() ? "Connected" : "Add key to generate",
                             juce::dontSendNotification);
+    syncStyleBoxToParams(); // AI/chat may have switched the style
     repaint();
 }
 
@@ -220,9 +270,12 @@ void AIMidiGenEditor::resized()
     subheaderLabel.setBounds (header.removeFromTop (20));
     header.removeFromTop (7);
     apiKeyLabel.setBounds (header.removeFromLeft (92));
-    apiKeyField.setBounds (header.removeFromLeft (260));
+    apiKeyField.setBounds (header.removeFromLeft (200));
     header.removeFromLeft (10);
-    apiStatusLabel.setBounds (header.removeFromLeft (140));
+    apiStatusLabel.setBounds (header.removeFromLeft (100));
+
+    styleBox.setBounds (header.removeFromRight (juce::jmin (170, header.getWidth() - 46)));
+    styleLabel.setBounds (header.removeFromRight (44));
 
     r.removeFromTop (12);
 

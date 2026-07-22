@@ -36,7 +36,9 @@ inline const char* toString (InstrumentType t)
     monolithic blob of notes. */
 enum class DrumPiece
 {
-    Kick, Snare, Clap, ClosedHat, OpenHat, NumPieces
+    Kick, Snare, Clap, ClosedHat, OpenHat,
+    Ride, Shaker, Rim, CongaHi, CongaLo,   // percussion — essential for modern
+    NumPieces                              // afro/tech house grooves
 };
 
 inline const char* toString (DrumPiece p)
@@ -48,6 +50,11 @@ inline const char* toString (DrumPiece p)
         case DrumPiece::Clap:      return "Clap";
         case DrumPiece::ClosedHat: return "Closed Hat";
         case DrumPiece::OpenHat:   return "Open Hat";
+        case DrumPiece::Ride:      return "Ride";
+        case DrumPiece::Shaker:    return "Shaker";
+        case DrumPiece::Rim:       return "Rim";
+        case DrumPiece::CongaHi:   return "Conga Hi";
+        case DrumPiece::CongaLo:   return "Conga Lo";
         default:                   return "?";
     }
 }
@@ -62,6 +69,11 @@ inline int drumPieceMidiNote (DrumPiece p)
         case DrumPiece::Clap:      return 39;
         case DrumPiece::ClosedHat: return 42;
         case DrumPiece::OpenHat:   return 46;
+        case DrumPiece::Ride:      return 51;
+        case DrumPiece::Shaker:    return 70; // GM maracas
+        case DrumPiece::Rim:       return 37; // GM side stick
+        case DrumPiece::CongaHi:   return 63; // GM open hi conga
+        case DrumPiece::CongaLo:   return 64; // GM low conga
         default:                   return 36;
     }
 }
@@ -72,8 +84,8 @@ struct MusicParams
 {
     std::string root  = "F";       // root note name
     std::string scale = "minor";   // scale name (see MusicTheory)
-    std::string genre = "House";
-    double bpm        = 124.0;
+    std::string genre = "Tech House"; // must name a StylePresets entry
+    double bpm        = 126.0;
     int    bars       = 4;
     int    octave     = 4;         // base octave for the lead register
 

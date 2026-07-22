@@ -37,30 +37,71 @@ GeneratedPart MidiGenerator::generate (InstrumentType type, const MusicParams& p
 //==============================================================================
 GeneratedPart MidiGenerator::generateChords (const MusicParams& p)
 {
+    const auto& st = findStyle (p.genre);
+
+    // chordComplexity dial nudges the preset's voicing richer/simpler.
+    int tones = st.chordTones;
+    if (p.chordComplexity > 0.75f) ++tones;
+    if (p.chordComplexity < 0.25f) --tones;
+    tones = std::clamp (tones, 3, 6);
+
+    return generateChordsWithMode (p, st.chordMode, tones);
+}
+
+GeneratedPart MidiGenerator::generateChordsWithMode (const MusicParams& p,
+                                                     ChordMode mode, int tones)
+{
     GeneratedPart part;
+    const auto& st    = findStyle (p.genre);
     const int rootPc  = rootPitchClass (p.root);
     const auto ivals  = scaleIntervals (p.scale);
     const int base    = 12 * (p.octave) + rootPc; // e.g. octave 4 -> ~C4 region
 
-    // A classic minor house progression by scale degree: i - VI - III - VII
-    const int degrees[] = { 0, 5, 2, 6 };
-    const bool seventh = p.chordComplexity > 0.5f;
-
     for (int bar = 0; bar < p.bars; ++bar)
     {
-        const int deg = degrees[bar % 4];
-        auto chord = theory::diatonicChord (base, rootPc, ivals, deg, seventh);
-        const double start = bar * 4.0; // one chord per bar (4 beats)
+        const int deg = st.progression[(size_t) (bar % 4)];
+        auto chord = theory::diatonicChord (base, rootPc, ivals, deg, tones);
+        const double b0 = bar * 4.0;
 
-        // Stab vs sustain based on energy: high energy = shorter punchy stabs.
-        const double len = p.energy > 0.6f ? 0.5 : 3.5;
-        for (int n : chord)
-            part.notes.push_back ({ start, len, n, 0.75f });
+        switch (mode)
+        {
+            case ChordMode::Sustained:
+                for (int n : chord)
+                    part.notes.push_back ({ b0, 3.9, n, 0.65f });
+                break;
 
-        // Optional off-beat stab for energetic house
-        if (p.energy > 0.6f)
-            for (int n : chord)
-                part.notes.push_back ({ start + 2.0, 0.5, n, 0.6f });
+            case ChordMode::Stabs:
+            {
+                // Sparse, punchy hits — extra syncopated hit at high energy.
+                for (int n : chord)
+                {
+                    part.notes.push_back ({ b0,        0.4, n, 0.8f });
+                    part.notes.push_back ({ b0 + 2.5,  0.35, n, 0.7f });
+                    if (p.energy > 0.65f)
+                        part.notes.push_back ({ b0 + 1.75, 0.3, n, 0.6f });
+                }
+                break;
+            }
+
+            case ChordMode::OffbeatStabs:
+                // Classic house piano/organ: stab on every "and".
+                for (int beat = 0; beat < 4; ++beat)
+                    for (int n : chord)
+                        part.notes.push_back ({ b0 + beat + 0.5, 0.45, n,
+                                                0.68f + rand01() * 0.12f });
+                break;
+
+            case ChordMode::Plucked:
+                // Rhythmic short plucks on 1/8s, density-gated.
+                for (int eighth = 0; eighth < 8; ++eighth)
+                {
+                    if (rand01() > 0.35f + p.noteDensity * 0.35f) continue;
+                    for (int n : chord)
+                        part.notes.push_back ({ b0 + eighth * 0.5, 0.3, n,
+                                                0.5f + rand01() * 0.2f });
+                }
+                break;
+        }
     }
     return part;
 }
@@ -68,23 +109,76 @@ GeneratedPart MidiGenerator::generateChords (const MusicParams& p)
 GeneratedPart MidiGenerator::generateBass (const MusicParams& p)
 {
     GeneratedPart part;
+    const auto& st   = findStyle (p.genre);
     const int rootPc = rootPitchClass (p.root);
     const auto ivals = scaleIntervals (p.scale);
     const int base   = 12 * (p.octave - 2) + rootPc; // low register
 
-    const int degrees[] = { 0, 5, 2, 6 };
-    // 1/8-note offbeat house bass with gaps (avoid clashing with the kick).
+    auto degreeNote = [&] (int bar) -> int
+    {
+        const int deg = st.progression[(size_t) (bar % 4)];
+        return base + ivals[(size_t) (deg % (int) ivals.size())];
+    };
+
     for (int bar = 0; bar < p.bars; ++bar)
     {
-        const int deg  = degrees[bar % 4];
-        const int note = base + ivals[(size_t) (deg % (int) ivals.size())];
-        for (int eighth = 0; eighth < 8; ++eighth)
+        const double b0 = bar * 4.0;
+        const int note  = degreeNote (bar);
+
+        switch (st.bassStyle)
         {
-            // Skip downbeats (where kick lands): play the "and" of each beat.
-            if (eighth % 2 == 0) continue;
-            if (rand01() > 0.85f) continue; // occasional gap for groove
-            const double start = bar * 4.0 + eighth * 0.5;
-            part.notes.push_back ({ start, 0.45, note, 0.85f });
+            case BassStyle::OffbeatEighths:
+                // Classic house: play the "and" of each beat, occasional gap.
+                for (int eighth = 1; eighth < 8; eighth += 2)
+                {
+                    if (rand01() > 0.85f) continue;
+                    part.notes.push_back ({ b0 + eighth * 0.5, 0.45, note, 0.85f });
+                }
+                break;
+
+            case BassStyle::RollingSixteenths:
+                // Tech house: relentless 16ths (downbeats left to the kick),
+                // with octave pops for movement.
+                for (int s = 0; s < 16; ++s)
+                {
+                    if (s % 4 == 0) continue;               // leave kick space
+                    if (rand01() > 0.92f) continue;          // rare gap
+                    const bool octavePop = (s % 8 == 6) && rand01() < 0.6f;
+                    part.notes.push_back ({ b0 + s * 0.25, 0.22,
+                                            note + (octavePop ? 12 : 0),
+                                            s % 2 == 0 ? 0.85f : 0.7f });
+                }
+                break;
+
+            case BassStyle::SubSustained:
+                // Deep/organic: long low subs, occasional pickup note.
+                part.notes.push_back ({ b0, 2.4, note, 0.8f });
+                if (rand01() < 0.6f)
+                    part.notes.push_back ({ b0 + 2.5, 1.3, note, 0.7f });
+                break;
+
+            case BassStyle::StabSyncopated:
+                // Afro house: syncopated stabs between the kicks.
+                for (int s : { 3, 6, 11, 14 })
+                {
+                    if (rand01() > 0.85f) continue;
+                    part.notes.push_back ({ b0 + s * 0.25, 0.4, note, 0.85f });
+                }
+                break;
+
+            case BassStyle::GarageSub:
+            {
+                // UKG: 2-step sub with pitch movement (root -> 5th -> b7).
+                const int offsets[] = { 0, 0, 7, 0, 10 };
+                const int steps[]   = { 0, 5, 8, 11, 14 };
+                for (int i = 0; i < 5; ++i)
+                {
+                    if (rand01() > 0.9f) continue;
+                    part.notes.push_back ({ b0 + steps[i] * 0.25, 0.4,
+                                            note + offsets[i], 0.85f });
+                }
+                break;
+            }
         }
     }
     return part;
@@ -125,13 +219,17 @@ GeneratedPart MidiGenerator::generateArp (const MusicParams& p)
     const auto ivals = scaleIntervals (p.scale);
     const int base   = 12 * (p.octave + 1) + rootPc;
 
-    const int degrees[] = { 0, 2, 4, 6 }; // arpeggiated triad+7 tones
+    // Arp follows the style's chord progression: each bar arpeggiates the
+    // chord of that bar (root/3rd/5th/7th climbing, octave alternation).
+    const auto& st = findStyle (p.genre);
+    const int offsets[] = { 0, 2, 4, 6 };
     const double step = 0.25; // 1/16 arp
     const int totalSteps = (int) std::round ((p.bars * 4.0) / step);
     for (int s = 0; s < totalSteps; ++s)
     {
-        const int deg  = degrees[s % 4];
-        const int oct  = (s / 4) % 2;
+        const int bar  = (int) (s * step / 4.0);
+        const int deg  = st.progression[(size_t) (bar % 4)] + offsets[s % 4];
+        const int oct  = (s / 4) % 2 + deg / (int) ivals.size();
         const int note = base + oct * 12 + ivals[(size_t) (deg % (int) ivals.size())];
         part.notes.push_back ({ s * step, step * 0.9, note, 0.7f });
     }
@@ -140,13 +238,12 @@ GeneratedPart MidiGenerator::generateArp (const MusicParams& p)
 
 GeneratedPart MidiGenerator::generatePad (const MusicParams& p)
 {
-    // Sustained version of the chord part.
-    auto part = generateChords (p);
+    // Pads are always the sustained voicing of the current progression,
+    // regardless of the style's chord rhythm.
+    const auto& st = findStyle (p.genre);
+    auto part = generateChordsWithMode (p, ChordMode::Sustained,
+                                        std::clamp (st.chordTones, 3, 5));
     for (auto& n : part.notes) { n.lengthBeats = 4.0; n.velocity = 0.55f; }
-    // collapse offbeat stabs -> keep only bar-aligned notes
-    part.notes.erase (std::remove_if (part.notes.begin(), part.notes.end(),
-        [] (const NoteEvent& n) { return std::fmod (n.startBeats, 4.0) > 0.01; }),
-        part.notes.end());
     return part;
 }
 
@@ -176,40 +273,37 @@ std::array<GeneratedPart, (size_t) DrumPiece::NumPieces>
     std::array<GeneratedPart, (size_t) DrumPiece::NumPieces> kit;
     for (auto& g : kit) g.type = InstrumentType::Drums;
 
-    auto& kickPart  = kit[(size_t) DrumPiece::Kick];
-    auto& snarePart = kit[(size_t) DrumPiece::Snare];
-    auto& clapPart  = kit[(size_t) DrumPiece::Clap];
-    auto& chatPart  = kit[(size_t) DrumPiece::ClosedHat];
-    auto& ohatPart  = kit[(size_t) DrumPiece::OpenHat];
+    // Style-preset groove templates: 16 velocity steps per piece per bar,
+    // probability-gated so every regenerate breathes a little differently.
+    const auto& st = findStyle (p.genre);
 
-    const int kick      = drumPieceMidiNote (DrumPiece::Kick);
-    const int snare     = drumPieceMidiNote (DrumPiece::Snare);
-    const int clap      = drumPieceMidiNote (DrumPiece::Clap);
-    const int closedHat = drumPieceMidiNote (DrumPiece::ClosedHat);
-    const int openHat   = drumPieceMidiNote (DrumPiece::OpenHat);
-
-    for (int bar = 0; bar < p.bars; ++bar)
+    for (int pieceIdx = 0; pieceIdx < (int) DrumPiece::NumPieces; ++pieceIdx)
     {
-        const double b0 = bar * 4.0;
+        const auto piece   = (DrumPiece) pieceIdx;
+        const auto& pat    = st.drums[(size_t) pieceIdx];
+        const int midiNote = drumPieceMidiNote (piece);
 
-        // Four-on-the-floor kick
-        for (int beat = 0; beat < 4; ++beat)
-            kickPart.notes.push_back ({ b0 + beat, 0.25, kick, 0.95f });
+        // Hats and shakers get denser with the energy dial; core pieces
+        // (kick/snare/clap) stay rock solid.
+        const bool energySensitive = piece == DrumPiece::ClosedHat
+                                  || piece == DrumPiece::Shaker
+                                  || piece == DrumPiece::Ride;
+        const float probScale = energySensitive ? (0.55f + p.energy * 0.5f) : 1.0f;
 
-        // Clap/snare on 2 and 4
-        clapPart.notes.push_back  ({ b0 + 1.0, 0.25, clap,  0.85f });
-        snarePart.notes.push_back ({ b0 + 3.0, 0.25, snare, 0.8f });
-
-        // Offbeat open hat (the house "tss")
-        for (int beat = 0; beat < 4; ++beat)
-            ohatPart.notes.push_back ({ b0 + beat + 0.5, 0.2, openHat, 0.6f });
-
-        // 1/16 closed hats, energy-scaled
-        for (int s = 0; s < 16; ++s)
+        for (int bar = 0; bar < p.bars; ++bar)
         {
-            if (rand01() > 0.4f + p.energy * 0.5f) continue;
-            chatPart.notes.push_back ({ b0 + s * 0.25, 0.1, closedHat,
-                                        0.4f + rand01() * 0.3f });
+            const double b0 = bar * 4.0;
+            for (int s = 0; s < 16; ++s)
+            {
+                const float v = pat.steps[(size_t) s];
+                if (v <= 0.0f) continue;
+                if (rand01() > pat.probability * probScale) continue;
+
+                const float vel = std::clamp (v * (0.85f + p.energy * 0.25f),
+                                              0.05f, 1.0f);
+                kit[(size_t) pieceIdx].notes.push_back (
+                    { b0 + s * 0.25, 0.15, midiNote, vel });
+            }
         }
     }
 
@@ -246,10 +340,14 @@ int MidiGenerator::validate (GeneratedPart& part, const MusicParams& p)
             n.pitch = std::clamp (n.pitch, 0, 127);
         }
 
-        // Swing: push the "and" of the beat later.
+        // Swing: push the "and" of the beat later (1/8 swing), and give the
+        // 2nd/4th 1/16 of each beat a lighter push (shuffle feel — essential
+        // for UK garage and swung deep/afro grooves).
         const double frac = std::fmod (n.startBeats, 1.0);
         if (std::abs (frac - 0.5) < 1e-3)
             n.startBeats += p.swing * 0.15;
+        else if (std::abs (frac - 0.25) < 1e-3 || std::abs (frac - 0.75) < 1e-3)
+            n.startBeats += p.swing * 0.08;
 
         // Humanize timing + velocity slightly.
         n.startBeats += (rand01() - 0.5f) * 0.02 * p.humanize;

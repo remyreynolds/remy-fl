@@ -1,4 +1,5 @@
 #include "AIClient.h"
+#include "../engine/StylePresets.h"
 #include <juce_events/juce_events.h>
 
 namespace aimidi
@@ -15,6 +16,15 @@ AIClient::AIClient()
 //==============================================================================
 juce::String AIClient::buildSystemPrompt()
 {
+    // The engine's style presets are the ground truth — build the genre list
+    // (with BPM + vibe descriptions) straight from them so prompt and engine
+    // can never drift apart.
+    juce::String styleList;
+    for (const auto& st : allStyles())
+        styleList << "  - \"" << st.name << "\" (" << (int) st.bpm << " bpm, swing "
+                  << juce::String (st.swing, 2) << ", " << st.scale << "): "
+                  << st.vibe << "\n";
+
     return
 R"(You are the music-director brain of a MIDI generation plugin.
 You DO NOT write MIDI notes. You translate a producer's request into a compact
@@ -24,14 +34,19 @@ Respond with ONLY a single JSON object, no prose, matching this schema:
 {
   "reply": "<one short sentence to show the user>",
   "params": {
-    "root": "F", "scale": "minor", "genre": "House",
-    "bpm": 124, "bars": 4, "octave": 4,
+    "root": "F", "scale": "minor", "genre": "Tech House",
+    "bpm": 126, "bars": 4, "octave": 4,
     "complexity": 0.5, "energy": 0.6, "swing": 0.15, "humanize": 0.3,
     "noteDensity": 0.5, "rhythmComplexity": 0.5, "chordComplexity": 0.5
   },
   "generate": ["Melody","Chords","Bass","Drums","Arp","Pad","Counter Melody"]
 }
 Rules:
+- "genre" MUST be exactly one of the style names below. Map artist references,
+  labels and vibe words to the closest style (e.g. "John Summit" -> Tech House,
+  "Keinemusik" -> Afro House, "Anyma" -> Melodic House, "2-step" -> UK Garage):
+)" + styleList + R"(- When switching style, default bpm/swing/scale to that style's values above
+  unless the user explicitly asked for something else.
 - "scale" must be one of: major, minor, dorian, phrygian, lydian, mixolydian,
   locrian, harmonicMinor, minorPentatonic, majorPentatonic.
 - All 0..1 dials are floats. Only include instruments the user asked to change
@@ -201,6 +216,17 @@ AIClient::Response AIClient::localFallback (const juce::String& userPrompt,
     resp.params = current;
     auto& p = resp.params;
     const auto lower = userPrompt.toLowerCase();
+
+    // Style detection first: match against the preset keyword lists
+    // ("afro", "keinemusik", "garage", "melodic", …) and adopt that style's
+    // groove defaults, exactly like the online AI would.
+    if (const auto* st = findStyleOrNull (lower.toStdString()))
+    {
+        p.genre = st->name;
+        p.bpm   = st->bpm;
+        p.swing = st->swing;
+        p.scale = st->scale;
+    }
 
     if (lower.contains ("dark"))    { p.scale = "phrygian"; p.energy = 0.4f; }
     if (lower.contains ("happy") || lower.contains ("uplift")) p.scale = "major";
