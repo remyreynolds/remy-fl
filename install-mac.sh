@@ -43,7 +43,10 @@ say "CMake: OK ($(cmake --version | head -1))"
 # ----------------------------------------------------------------- 3. source
 if [ -d "$DIR/.git" ]; then
   say "Updating source in $DIR…"
-  git -C "$DIR" pull --ff-only
+  git -C "$DIR" pull --ff-only 2>/dev/null \
+    || say "Could not update from GitHub — building the local copy as-is."
+elif [ -d "$DIR/src" ]; then
+  say "Using existing source in $DIR (no git remote)…"
 else
   say "Cloning source into $DIR…"
   git clone "$REPO" "$DIR"
