@@ -12,3 +12,6 @@ data/*.db-shm
 data/*.db-wal
 node_modules/
 storybook-static/
+brain/3-memory/*.db
+brain/3-memory/*.db-shm
+brain/3-memory/*.db-wal
