@@ -7,7 +7,7 @@ namespace aimidi
 InstrumentPanel::InstrumentPanel (InstrumentType t) : type (t)
 {
     title.setText (toString (t), juce::dontSendNotification);
-    title.setFont (juce::Font (15.0f, juce::Font::bold));
+    title.setFont (CustomLookAndFeel::font (13.5f, juce::Font::bold));
     addAndMakeVisible (title);
 
     generateBtn.onClick = [this] { if (onGenerate) onGenerate(); };
@@ -71,31 +71,34 @@ void InstrumentPanel::startMidiDrag()
 
 void InstrumentPanel::paint (juce::Graphics& g)
 {
-    g.setColour (CustomLookAndFeel::panel);
-    g.fillRoundedRectangle (getLocalBounds().toFloat().reduced (2.0f), 8.0f);
-    auto dot = getLocalBounds().reduced (10).removeFromTop (18).removeFromRight (14);
-    g.setColour (hasContent ? CustomLookAndFeel::accent2
-                            : CustomLookAndFeel::text.withAlpha (0.2f));
-    g.fillEllipse (dot.toFloat().withSizeKeepingCentre (10, 10));
+    CustomLookAndFeel::drawPanel (g, getLocalBounds().reduced (1));
+
+    auto titleArea = getLocalBounds().reduced (10).removeFromTop (26);
+    g.setColour (CustomLookAndFeel::divider);
+    g.drawHorizontalLine (titleArea.getBottom() + 4, 10.0f, (float) getWidth() - 10.0f);
+
+    auto dot = titleArea.removeFromRight (18);
+    g.setColour (hasContent ? CustomLookAndFeel::accent2 : CustomLookAndFeel::muted.withAlpha (0.35f));
+    g.fillEllipse (dot.toFloat().withSizeKeepingCentre (8, 8));
 }
 
 void InstrumentPanel::resized()
 {
     auto r = getLocalBounds().reduced (10);
-    title.setBounds (r.removeFromTop (22));
-    r.removeFromTop (6);
+    title.setBounds (r.removeFromTop (24));
+    r.removeFromTop (10);
 
     auto row1 = r.removeFromTop (28);
-    generateBtn.setBounds (row1.removeFromLeft (row1.getWidth() / 2 - 3));
-    row1.removeFromLeft (6);
-    lockBtn.setBounds (row1.removeFromLeft (row1.getWidth() / 2 - 3));
-    row1.removeFromLeft (6);
+    generateBtn.setBounds (row1.removeFromLeft (row1.getWidth() / 2 - 4));
+    row1.removeFromLeft (8);
+    lockBtn.setBounds (row1.removeFromLeft (row1.getWidth() / 2 - 4));
+    row1.removeFromLeft (8);
     muteBtn.setBounds (row1);
 
-    r.removeFromTop (6);
+    r.removeFromTop (8);
     auto row2 = r.removeFromTop (28);
-    dragBtn.setBounds (row2.removeFromLeft (row2.getWidth() / 2 - 3));
-    row2.removeFromLeft (6);
+    dragBtn.setBounds (row2.removeFromLeft (row2.getWidth() / 2 - 4));
+    row2.removeFromLeft (8);
     exportBtn.setBounds (row2);
 }
 

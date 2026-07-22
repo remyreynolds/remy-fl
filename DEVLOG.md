@@ -89,4 +89,24 @@ instrument.
 - AI prompt schema still only knows the coarse `"Drums"` instrument name —
   asking Claude to "just change the hi-hats" won't yet target one piece.
   Fine-grained AI control over individual drum pieces is a later iteration.
-- API key still not persisted across restarts (Keychain — tracked separately).
+- API key is persisted via `~/Library/Application Support/AIMidiGen/` settings
+  (env var `ANTHROPIC_API_KEY` still wins when set).
+
+## Phase 1.2 — Remy CRM UI pass
+
+### Source
+Pulled a design handoff from the `crm-agent` so the plugin follows the same
+Remy CRM visual language instead of generic audio-plugin styling.
+
+### Changed
+- Reworked `CustomLookAndFeel` around a near-black, monochrome-first token set:
+  base background, raised surfaces, muted text, hairline dividers, and restrained
+  active-state highlights.
+- Standardized controls on the Remy CRM shape language: flat fills, 6px corner
+  radius, subtle hover/pressed states, and divider outlines instead of bevels,
+  shadows, gradients, or saturated colors.
+- Updated the editor header into a compact SaaS dashboard-style control band
+  with title, subheader, Claude API status, primary actions, and a circular
+  "Parts ready" meter inspired by the CRM dial panel.
+- Flattened chat, instrument, and drum-kit panels to use consistent spacing,
+  small bold labels, low-contrast dividers, and compact row layouts.

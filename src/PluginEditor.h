@@ -29,7 +29,11 @@ private:
     CustomLookAndFeel   lnf;
 
     juce::Label   headerLabel;
-    juce::TextButton previewButton { "▶ Preview All" };
+    juce::Label   subheaderLabel;
+    juce::Label   meterLabel;
+    juce::Label   meterValueLabel;
+    juce::Label   apiStatusLabel;
+    juce::TextButton previewButton { "Preview All" };
     juce::TextButton generateAllButton { "Generate All" };
     juce::TextEditor apiKeyField;
     juce::Label   apiKeyLabel { {}, "Claude API key:" };

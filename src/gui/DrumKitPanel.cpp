@@ -7,7 +7,7 @@ namespace aimidi
 DrumKitPanel::DrumKitPanel()
 {
     title.setText ("Drums", juce::dontSendNotification);
-    title.setFont (juce::Font (15.0f, juce::Font::bold));
+    title.setFont (CustomLookAndFeel::font (13.5f, juce::Font::bold));
     addAndMakeVisible (title);
 
     for (int i = 0; i < (int) DrumPiece::NumPieces; ++i)
@@ -16,7 +16,8 @@ DrumKitPanel::DrumKitPanel()
         row.piece = (DrumPiece) i;
 
         row.label.setText (toString (row.piece), juce::dontSendNotification);
-        row.label.setFont (juce::Font (12.0f));
+        row.label.setFont (CustomLookAndFeel::font (11.5f, juce::Font::bold));
+        row.label.setColour (juce::Label::textColourId, CustomLookAndFeel::muted);
         addAndMakeVisible (row.label);
 
         row.generateBtn.onClick = [this, i]
@@ -94,20 +95,23 @@ void DrumKitPanel::startFullKitDrag()
 
 void DrumKitPanel::paint (juce::Graphics& g)
 {
-    g.setColour (CustomLookAndFeel::panel);
-    g.fillRoundedRectangle (getLocalBounds().toFloat().reduced (2.0f), 8.0f);
+    CustomLookAndFeel::drawPanel (g, getLocalBounds().reduced (1));
 
-    auto dot = getLocalBounds().reduced (10).removeFromTop (18).removeFromRight (14);
+    auto titleArea = getLocalBounds().reduced (10).removeFromTop (24);
+    g.setColour (CustomLookAndFeel::divider);
+    g.drawHorizontalLine (titleArea.getBottom() + 4, 10.0f, (float) getWidth() - 10.0f);
+
+    auto dot = titleArea.removeFromRight (18);
     g.setColour (fullKitHasContent ? CustomLookAndFeel::accent2
-                                   : CustomLookAndFeel::text.withAlpha (0.2f));
-    g.fillEllipse (dot.toFloat().withSizeKeepingCentre (10, 10));
+                                   : CustomLookAndFeel::muted.withAlpha (0.35f));
+    g.fillEllipse (dot.toFloat().withSizeKeepingCentre (8, 8));
 }
 
 void DrumKitPanel::resized()
 {
-    auto r = getLocalBounds().reduced (8);
-    title.setBounds (r.removeFromTop (20));
-    r.removeFromTop (4);
+    auto r = getLocalBounds().reduced (10);
+    title.setBounds (r.removeFromTop (24));
+    r.removeFromTop (10);
 
     const int bottomH = 26;
     const int rowH = juce::jmax (16, (r.getHeight() - bottomH - 4) / (int) rows.size());
@@ -115,23 +119,23 @@ void DrumKitPanel::resized()
     for (auto& row : rows)
     {
         auto rr = r.removeFromTop (rowH);
-        row.label.setBounds (rr.removeFromLeft (juce::jmax (46, rr.getWidth() / 4)));
-        rr.removeFromLeft (4);
-        const int btnW = juce::jmax (24, rr.getWidth() / 3 - 3);
+        row.label.setBounds (rr.removeFromLeft (juce::jmax (48, rr.getWidth() / 4)));
+        rr.removeFromLeft (6);
+        const int btnW = juce::jmax (26, rr.getWidth() / 4 - 3);
         row.generateBtn.setBounds (rr.removeFromLeft (btnW));
-        rr.removeFromLeft (3);
+        rr.removeFromLeft (4);
         row.lockBtn.setBounds (rr.removeFromLeft (btnW));
-        rr.removeFromLeft (3);
+        rr.removeFromLeft (4);
         row.muteBtn.setBounds (rr.removeFromLeft (btnW));
-        rr.removeFromLeft (3);
+        rr.removeFromLeft (4);
         row.dragBtn.setBounds (rr);
         r.removeFromTop (2);
     }
 
-    r.removeFromTop (2);
+    r.removeFromTop (4);
     auto bottom = r.removeFromTop (bottomH);
-    generateAllBtn.setBounds (bottom.removeFromLeft (bottom.getWidth() / 2 - 3));
-    bottom.removeFromLeft (6);
+    generateAllBtn.setBounds (bottom.removeFromLeft (bottom.getWidth() / 2 - 4));
+    bottom.removeFromLeft (8);
     dragAllBtn.setBounds (bottom);
 }
 

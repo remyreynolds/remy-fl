@@ -10,13 +10,15 @@ ChatPanel::ChatPanel()
     transcript.setReadOnly (true);
     transcript.setScrollbarsShown (true);
     transcript.setCaretVisible (false);
-    transcript.setColour (juce::TextEditor::backgroundColourId, CustomLookAndFeel::panelDark);
+    transcript.setFont (CustomLookAndFeel::font (12.5f));
+    transcript.setColour (juce::TextEditor::backgroundColourId, CustomLookAndFeel::surface2);
     addAndMakeVisible (transcript);
 
     input.setMultiLine (false);
     input.setReturnKeyStartsNewLine (false);
     input.setTextToShowWhenEmpty ("Describe what you want… e.g. \"dark melodic house chords in F minor\"",
                                   CustomLookAndFeel::text.withAlpha (0.4f));
+    input.setFont (CustomLookAndFeel::font (12.5f));
     input.onReturnKey = [this] { fireSend(); };
     addAndMakeVisible (input);
 
@@ -56,23 +58,26 @@ void ChatPanel::setBusy (bool b)
 
 void ChatPanel::paint (juce::Graphics& g)
 {
-    g.setColour (CustomLookAndFeel::panel);
-    g.fillRoundedRectangle (getLocalBounds().toFloat(), 8.0f);
-    g.setColour (CustomLookAndFeel::text.withAlpha (0.7f));
-    g.setFont (juce::Font (14.0f, juce::Font::bold));
-    g.drawText ("AI Chat", getLocalBounds().removeFromTop (24).reduced (10, 4),
+    CustomLookAndFeel::drawPanel (g, getLocalBounds());
+
+    auto titleArea = getLocalBounds().removeFromTop (34);
+    g.setColour (CustomLookAndFeel::text);
+    g.setFont (CustomLookAndFeel::font (13.5f, juce::Font::bold));
+    g.drawText ("AI Chat", titleArea.reduced (12, 6),
                 juce::Justification::centredLeft);
+    g.setColour (CustomLookAndFeel::divider);
+    g.drawHorizontalLine (titleArea.getBottom(), 12.0f, (float) getWidth() - 12.0f);
 }
 
 void ChatPanel::resized()
 {
-    auto r = getLocalBounds().reduced (8);
-    r.removeFromTop (22); // title
+    auto r = getLocalBounds().reduced (10);
+    r.removeFromTop (32); // title
     auto bottom = r.removeFromBottom (34);
-    sendButton.setBounds (bottom.removeFromRight (72));
-    bottom.removeFromRight (6);
+    sendButton.setBounds (bottom.removeFromRight (68));
+    bottom.removeFromRight (8);
     input.setBounds (bottom);
-    r.removeFromBottom (8);
+    r.removeFromBottom (10);
     transcript.setBounds (r);
 }
 
