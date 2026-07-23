@@ -1,5 +1,35 @@
 # AI MIDI Gen — Development Log
 
+## 2026-07-23 — Ease-of-use pass: key testing, help overlay, genre-smart tempo
+
+Three strategic usability items, aimed at a beginner producer's first session:
+
+1. **API key test + honest engine badge.** New `AIClient::testConnection()`
+   fires a 1-token live request off-thread (alive-flag guarded) and reports a
+   plain-English verdict: "Connected — <model> is ready", key rejected (401/403),
+   rate-limited (429), or no internet. Settings gained a "Test key" button and
+   a colour-coded status line under the key field; result is also echoed to
+   chat. The header badge now shows three truthful states — "Claude ready" /
+   "Offline mode" / "Local engine" — and repaints when the key or offline
+   toggle changes (before, it claimed "Connected" merely because a key string
+   existed).
+2. **Help overlay.** New "?" title-bar button opens a dimmed overlay
+   (quick-start steps, Space-bar preview, instant chat commands). Auto-shows
+   once on true first run via a `helpSeen` flag persisted in plugin state;
+   dismiss by button or clicking outside (deferred delete — never
+   mid-callback).
+3. **Genre-smart tempo.** Switching genre now lands BPM + swing on that
+   style's sweet spot (`findStyle` preset) so "pick Trap, hit Generate" no
+   longer plays at house tempo. Skipped when host-sync is on or the user set
+   their own BPM this session (`setBpmFromUser` marks the override from the
+   BPM well, +/- buttons, and chat "128 bpm" intents; not persisted). Chat
+   announces e.g. "Trap → 140 BPM (genre sweet spot — edit the BPM well to
+   take over)". Restore/DNA/chat-intent paths pass `applyTempo=false` so a
+   saved project's tempo is never stomped.
+
+Verified: full ninja build (VST3 + Standalone), MidiPatternTests,
+EngineTests, GeneratorAuditTests (144 parts, 0 failures) all green.
+
 ## 2026-07-23 — Deep audit: full Linux CI build, validator repairs, 39 findings fixed
 
 ### What ran

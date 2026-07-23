@@ -61,6 +61,7 @@ private:
     void reportGeneration (const GenerationReport& report, bool offerLocal);
     void exportAllTracks();
     void nudgeBpm (int delta);
+    void showHelpOverlay();
     void timerCallback() override;
     InstrumentType pickPartForMidiAttach() const;
     juce::String notesLineFor (InstrumentType type);
@@ -85,6 +86,7 @@ private:
     juce::Label   headerLabel;
     juce::Label   apiStatusLabel;
     juce::TextButton optionsButton { "Options" };
+    juce::TextButton helpButton { "?" };
     juce::Label   lastRunTitle { {}, "LAST RUN" };
     juce::Label   lastRunMeta;
     juce::Rectangle<int> titleBarBounds;
@@ -136,6 +138,8 @@ private:
     std::unique_ptr<juce::FileChooser> dnaChooser;
     juce::TextEditor apiKeyField;
     juce::Label   apiKeyLabel { {}, "API key" };
+    juce::TextButton testKeyButton { "Test key" };
+    juce::Label   keyTestStatus;
     bool suppressGenreCallback = false;
     bool suppressKeyCallback = false;
     bool suppressFocusCallback = false;
@@ -155,6 +159,23 @@ private:
     juce::String lastRunSeed;
     juce::Label generateErrorLabel;          // transient failure banner on Generate surface
     juce::uint32 generateErrorHideAtMs = 0;  // auto-hide deadline (~6s)
+
+    /** Dimmed full-editor overlay with the quick-start / shortcuts panel.
+        Shown on first run and any time via the "?" header button. */
+    class HelpOverlay : public juce::Component
+    {
+    public:
+        HelpOverlay();
+        std::function<void()> onDismiss;
+        void paint (juce::Graphics&) override;
+        void resized() override;
+        void mouseDown (const juce::MouseEvent&) override;
+
+    private:
+        juce::Rectangle<int> panelArea() const;
+        juce::TextButton gotItButton { "Got it" };
+    };
+    std::unique_ptr<HelpOverlay> helpOverlay;
 
     MidiRollView midiRoll;
     ChordDashboardView chordDashboard;

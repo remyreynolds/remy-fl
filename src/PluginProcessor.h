@@ -132,6 +132,14 @@ public:
     /** Set project tempo (clamped). Preview playhead speed follows immediately. */
     void setBpm (double bpm);
     double getBpm() const { return projectParams.bpm; }
+    /** Explicit user tempo change (BPM well, chat "128 bpm"): from then on,
+        genre switches stop auto-applying their sweet-spot tempo. */
+    void setBpmFromUser (double bpm) { bpmUserOverridden = true; setBpm (bpm); }
+    bool userOverrodeBpm() const { return bpmUserOverridden; }
+
+    /** First-run help overlay flag (persisted with the project state). */
+    bool wasHelpSeen() const { return helpSeen; }
+    void setHelpSeen (bool seen) { helpSeen = seen; }
 
     /** When true, project BPM follows the host playhead (DAW tempo). */
     void setHostTempoSync (bool shouldSync);
@@ -152,7 +160,9 @@ public:
     // ---- Genre playback sounds ----
     GenreMode getGenreMode() const { return genreMode; }
     PartTimbre getPartTimbre (InstrumentType t) const { return partTimbres[(size_t) t]; }
-    void setGenreMode (GenreMode mode, bool applyDefaults = true);
+    /** applyTempo also lands BPM/swing on the style's sweet spot (skipped when
+        the DAW drives tempo or the user set their own BPM this session). */
+    void setGenreMode (GenreMode mode, bool applyDefaults = true, bool applyTempo = true);
     void setPartTimbre (InstrumentType t, PartTimbre timbre);
     /** If text mentions a genre, switch mode + defaults. Returns true if switched. */
     bool autoDetectGenreFromText (const juce::String& text);
@@ -248,6 +258,8 @@ private:
     GenerationReport lastGeneration;
     juce::String lastHarmonyFp;
     bool preferOfflineGeneration = false;
+    bool bpmUserOverridden = false;  // sticky per session; NOT persisted
+    bool helpSeen = false;           // first-run help overlay; persisted
     bool pendingLocalOffer = false;
     enum class PendingLocalAction { None, All, Lane, NewIdea };
     PendingLocalAction pendingLocalAction = PendingLocalAction::None;

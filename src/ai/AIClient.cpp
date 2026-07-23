@@ -596,6 +596,49 @@ void AIClient::handleUserTurn (const juce::String& userPrompt,
 }
 
 //==============================================================================
+void AIClient::testConnection (std::function<void (bool, juce::String)> done)
+{
+    const auto ep = endpointSnapshot();
+    if (ep.key.isEmpty())
+    {
+        done (false, "No API key yet — paste your " + ep.displayName + " key first");
+        return;
+    }
+
+    auto aliveFlag = alive;
+    juce::Thread::launch ([ep, aliveFlag, done]
+    {
+        const auto res = postChatCompletion (ep, "Reply with the single word: ok",
+                                             "ping", 8);
+        if (! aliveFlag->load()) return;
+
+        const bool ok = res.ok;
+        juce::String detail;
+        if (ok)
+            detail = "Connected — " + ep.model + " is ready";
+        else if (res.statusCode == 401 || res.statusCode == 403)
+            detail = "Key rejected — check it was pasted completely "
+                     "(Claude keys start with sk-ant-)";
+        else if (res.statusCode == 429)
+            detail = "Key works, but the account is rate-limited right now — "
+                     "try again in a minute";
+        else if (res.statusCode == 0)
+            detail = "Could not reach " + ep.displayName
+                     + " — check your internet connection";
+        else
+            detail = res.error.isNotEmpty()
+                         ? res.error
+                         : ("Request failed (HTTP " + juce::String (res.statusCode) + ")");
+
+        juce::MessageManager::callAsync ([aliveFlag, done, ok, detail]
+        {
+            if (aliveFlag->load())
+                done (ok, detail);
+        });
+    });
+}
+
+//==============================================================================
 void AIClient::sendChatMessage (const juce::String& userPrompt, ChatCallback callback)
 {
     if (! hasApiKey())

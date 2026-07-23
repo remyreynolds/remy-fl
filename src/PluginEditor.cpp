@@ -48,6 +48,11 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
     optionsButton.onClick = [this] { setSurface (Surface::Settings); };
     addAndMakeVisible (optionsButton);
 
+    helpButton.setComponentID ("ghost");
+    helpButton.setTooltip ("Quick help — workflow, shortcuts and chat commands");
+    helpButton.onClick = [this] { showHelpOverlay(); };
+    addAndMakeVisible (helpButton);
+
     lastRunTitle.setFont (CustomLookAndFeel::font (10.0f, juce::Font::bold));
     lastRunTitle.setColour (juce::Label::textColourId, CustomLookAndFeel::txt3);
     lastRunTitle.setInterceptsMouseClicks (false, false);
@@ -83,7 +88,7 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
         const int v = bpmValue.getText().retainCharacters ("0123456789").getIntValue();
         if (v > 0)
         {
-            processor.setBpm ((double) v);
+            processor.setBpmFromUser ((double) v);
             refreshBpmLabel();
         }
     };
@@ -168,6 +173,7 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
         chatPanel.addAssistantMessage (offlineModeButton.getToggleState()
             ? "Offline mode on — Generate / New Idea use the local engine only."
             : "Offline mode off — Generate / New Idea use Claude + Brain when a key is set.");
+        repaint (statusBadgeBounds.expanded (6));
         refreshProviderUi();
     };
     generateSurface.addAndMakeVisible (offlineModeButton);
@@ -460,8 +466,14 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
         const int id = genreCombo.getSelectedId();
         if (id > 0)
         {
+            const double bpmBefore = processor.getBpm();
             processor.setGenreMode (genreModeFromIndex (id - 1), true);
             refreshSoundControls();
+            refreshBpmLabel();
+            if (std::abs (processor.getBpm() - bpmBefore) > 0.5)
+                chatPanel.addAssistantMessage (genreCombo.getText() + " → "
+                    + juce::String ((int) std::round (processor.getBpm()))
+                    + " BPM (genre sweet spot — edit the BPM well to take over)");
         }
     };
     generateSurface.addAndMakeVisible (genreCombo);
@@ -593,10 +605,41 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
         {
             processor.ai().setApiKey (k);
             apiKeyField.setText ("(saved)", false);
+            keyTestStatus.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
+            keyTestStatus.setText ("Key saved — hit \"Test key\" to verify it",
+                                   juce::dontSendNotification);
         }
         refreshPanels();
+        repaint (statusBadgeBounds.expanded (6));
     };
     settingsSurface.addAndMakeVisible (apiKeyField);
+
+    testKeyButton.setComponentID ("ghost");
+    testKeyButton.setTooltip ("Send a tiny test request to verify the key, "
+                              "model and internet connection");
+    testKeyButton.onClick = [this]
+    {
+        testKeyButton.setEnabled (false);
+        keyTestStatus.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
+        keyTestStatus.setText ("Testing…", juce::dontSendNotification);
+        juce::Component::SafePointer<AIMidiGenEditor> safe (this);
+        processor.ai().testConnection ([safe] (bool ok, juce::String detail)
+        {
+            if (safe == nullptr) return;
+            safe->testKeyButton.setEnabled (true);
+            safe->keyTestStatus.setColour (juce::Label::textColourId,
+                ok ? juce::Colour (0xff4ac48a) : juce::Colour (0xffe06868));
+            safe->keyTestStatus.setText (detail, juce::dontSendNotification);
+            safe->chatPanel.addAssistantMessage (ok ? ("Key test: " + detail)
+                                                    : ("Key test failed — " + detail));
+            safe->repaint (safe->statusBadgeBounds.expanded (6));
+        });
+    };
+    settingsSurface.addAndMakeVisible (testKeyButton);
+
+    keyTestStatus.setFont (CustomLookAndFeel::font (11.5f));
+    keyTestStatus.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
+    settingsSurface.addAndMakeVisible (keyTestStatus);
     refreshProviderUi();
 
     generateSurface.addAndMakeVisible (midiRoll);
@@ -967,6 +1010,11 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
     setResizeLimits (980, 780, 2000, 1400);
     setSize (1440, 940); // VST v4 frame
     setSurface (Surface::Generate);
+
+    // First run in this project: show the quick-start overlay once, so a new
+    // producer sees the whole workflow without hunting for anything.
+    if (! processor.wasHelpSeen())
+        showHelpOverlay();
 }
 
 void AIMidiGenEditor::setSurface (Surface s)
@@ -997,7 +1045,7 @@ AIMidiGenEditor::~AIMidiGenEditor()
 
 void AIMidiGenEditor::nudgeBpm (int delta)
 {
-    processor.setBpm (processor.getBpm() + (double) delta);
+    processor.setBpmFromUser (processor.getBpm() + (double) delta);
     refreshBpmLabel();
 }
 
@@ -1907,9 +1955,17 @@ void AIMidiGenEditor::paint (juce::Graphics& g)
         CustomLookAndFeel::drawSegmentedTray (g, tabTrayBounds);
 
     if (! statusBadgeBounds.isEmpty())
+    {
+        // Three honest states so the user always knows which engine will run:
+        // forced-offline > Claude-ready > local-only (no key yet).
+        const bool offline = processor.prefersOfflineGeneration();
+        const bool hasKey  = processor.ai().hasApiKey();
         CustomLookAndFeel::drawBadge (g, statusBadgeBounds,
-                                     processor.ai().hasApiKey() ? "Connected" : "Offline",
-                                     processor.ai().hasApiKey());
+                                      offline ? "Offline mode"
+                                              : (hasKey ? "Claude ready"
+                                                        : "Local engine"),
+                                      ! offline && hasKey);
+    }
 
     // Generate surface cards (left / right rails)
     if (currentSurface == Surface::Generate)
@@ -1943,6 +1999,10 @@ void AIMidiGenEditor::resized()
     auto title = r.removeFromTop (42);
     titleBarBounds = title;
     optionsButton.setBounds (title.removeFromRight (88).reduced (12, 8));
+    helpButton.setBounds (title.removeFromRight (36).reduced (2, 8));
+
+    if (helpOverlay != nullptr)
+        helpOverlay->setBounds (getLocalBounds());
 
     // ---- Header: brand · TabsList · Connected (VST v4) ----
     auto header = r.removeFromTop (60).reduced (20, 12);
@@ -2178,6 +2238,13 @@ void AIMidiGenEditor::layoutSettingsSurface()
     apiKeyLabel.setBounds (row3.removeFromLeft (70));
     row3.removeFromLeft (6);
     apiKeyField.setBounds (row3.removeFromLeft (260));
+    row3.removeFromLeft (8);
+    testKeyButton.setBounds (row3.removeFromLeft (86).reduced (0, 1));
+    r.removeFromTop (gap);
+
+    auto row4 = r.removeFromTop (24);
+    row4.removeFromLeft (76); // align under the key field
+    keyTestStatus.setBounds (row4);
 }
 
 void AIMidiGenEditor::syncEffectiveMutes()
@@ -2320,6 +2387,112 @@ void AIMidiGenEditor::refreshTrackDetail()
         trackDetail.setVolume (0.72f);
         trackDetail.setTimbreOptions ({ "Drum kit" }, 1);
     }
+}
+
+//==============================================================================
+AIMidiGenEditor::HelpOverlay::HelpOverlay()
+{
+    setWantsKeyboardFocus (true);
+    setInterceptsMouseClicks (true, true); // swallow clicks so the UI below is inert
+    gotItButton.setComponentID ("primary");
+    gotItButton.onClick = [this] { if (onDismiss) onDismiss(); };
+    addAndMakeVisible (gotItButton);
+}
+
+juce::Rectangle<int> AIMidiGenEditor::HelpOverlay::panelArea() const
+{
+    return getLocalBounds().withSizeKeepingCentre (juce::jmin (620, getWidth() - 40),
+                                                   juce::jmin (520, getHeight() - 40));
+}
+
+void AIMidiGenEditor::HelpOverlay::resized()
+{
+    gotItButton.setBounds (panelArea().removeFromBottom (58)
+                               .withSizeKeepingCentre (132, 34));
+}
+
+void AIMidiGenEditor::HelpOverlay::mouseDown (const juce::MouseEvent& e)
+{
+    if (! panelArea().contains (e.getPosition()) && onDismiss)
+        onDismiss();
+}
+
+void AIMidiGenEditor::HelpOverlay::paint (juce::Graphics& g)
+{
+    g.fillAll (juce::Colour (0xcc0b0d12)); // dim everything beneath
+
+    auto panel = panelArea();
+    g.setColour (CustomLookAndFeel::bg2);
+    g.fillRoundedRectangle (panel.toFloat(), 14.0f);
+    g.setColour (juce::Colours::white.withAlpha (0.10f));
+    g.drawRoundedRectangle (panel.toFloat().reduced (0.5f), 14.0f, 1.0f);
+
+    auto r = panel.reduced (28, 22);
+
+    g.setColour (CustomLookAndFeel::txt1);
+    g.setFont (CustomLookAndFeel::font (19.0f, juce::Font::bold));
+    g.drawText ("How ComposerAI works", r.removeFromTop (30),
+                juce::Justification::centredLeft);
+    r.removeFromTop (10);
+
+    const juce::String quickStart =
+        "1.  Pick a Genre and hit \"New idea\" (or \"Generate all\") — every lane "
+        "stays in key and in sync with the shared chord plan. Switching genre "
+        "also lands the BPM on that style's sweet spot.\n"
+        "2.  Lock any lane you like, reroll the rest.\n"
+        "3.  Drag a lane (or \"Export all\") straight into your DAW's piano roll.\n"
+        "4.  \"MIDI DNA\" learns the groove + key of any .mid you load.\n"
+        "5.  With your Claude API key in Settings (use \"Test key\" to verify), "
+        "generation runs through Claude + the Brain; without one, the local "
+        "engine still works fully offline.";
+
+    g.setFont (CustomLookAndFeel::font (13.5f));
+    g.setColour (CustomLookAndFeel::txt1.withAlpha (0.92f));
+    auto quickArea = r.removeFromTop (190);
+    g.drawFittedText (quickStart, quickArea, juce::Justification::topLeft, 14);
+    r.removeFromTop (12);
+
+    g.setColour (CustomLookAndFeel::txt2);
+    g.setFont (CustomLookAndFeel::font (13.0f, juce::Font::bold));
+    g.drawText ("Shortcuts & chat commands", r.removeFromTop (22),
+                juce::Justification::centredLeft);
+    r.removeFromTop (6);
+
+    const juce::String shortcuts =
+        "Space — start/stop the loop preview\n"
+        "Chat runs these instantly, no waiting: \"make a bassline\", "
+        "\"new kick\", \"128 bpm\", \"in F minor\", \"darker\", \"busier hats\", "
+        "\"undo\" — type \"help\" for the full list.\n"
+        "Anything else becomes a real AI conversation grounded in your project.";
+
+    g.setFont (CustomLookAndFeel::font (13.0f));
+    g.setColour (CustomLookAndFeel::txt1.withAlpha (0.88f));
+    g.drawFittedText (shortcuts, r.removeFromTop (110),
+                      juce::Justification::topLeft, 8);
+}
+
+void AIMidiGenEditor::showHelpOverlay()
+{
+    if (helpOverlay != nullptr)
+        return;
+
+    helpOverlay = std::make_unique<HelpOverlay>();
+    helpOverlay->onDismiss = [this]
+    {
+        processor.setHelpSeen (true);
+        helpOverlay->setVisible (false);
+        // The dismiss originates inside the overlay (its button / mouseDown),
+        // so delete it on the next message loop tick, never mid-callback.
+        juce::Component::SafePointer<AIMidiGenEditor> safe (this);
+        juce::MessageManager::callAsync ([safe]
+        {
+            if (safe != nullptr)
+                safe->helpOverlay = nullptr;
+        });
+    };
+    addAndMakeVisible (*helpOverlay);
+    helpOverlay->setBounds (getLocalBounds());
+    helpOverlay->toFront (true);
 }
 
 } // namespace aimidi

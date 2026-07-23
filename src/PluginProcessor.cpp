@@ -468,7 +468,7 @@ void AIMidiGenProcessor::setDrumGain (DrumPiece dp, float gain01)
     drumGains[(size_t) dp] = juce::jlimit (0.0f, 1.25f, gain01);
 }
 
-void AIMidiGenProcessor::setGenreMode (GenreMode mode, bool applyDefaults)
+void AIMidiGenProcessor::setGenreMode (GenreMode mode, bool applyDefaults, bool applyTempo)
 {
     genreMode = mode;
     projectParams.genre = toString (mode);
@@ -479,6 +479,16 @@ void AIMidiGenProcessor::setGenreMode (GenreMode mode, bool applyDefaults)
         for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
             partTimbres[(size_t) t] = map.defaults[(size_t) t];
         applyMixDefaults();
+
+        // Genre-smart tempo: land on the style's sweet spot so "pick genre,
+        // hit Generate" grooves right immediately — unless the DAW drives the
+        // tempo or the user already dialled in their own BPM this session.
+        if (applyTempo && ! hostTempoSync.load() && ! bpmUserOverridden)
+        {
+            const auto& st = findStyle (projectParams.genre);
+            setBpm (st.bpm);
+            projectParams.swing = st.swing;
+        }
     }
 
     syncPreviewSounds();
@@ -498,7 +508,8 @@ bool AIMidiGenProcessor::autoDetectGenreFromText (const juce::String& text)
         return false;
     if (detected == genreMode)
         return false;
-    setGenreMode (detected, true);
+    // Callers of this path (chat intents, DNA import) manage tempo themselves.
+    setGenreMode (detected, true, false);
     return true;
 }
 
@@ -1222,12 +1233,12 @@ bool AIMidiGenProcessor::tryLocalChatCommand (const juce::String& text,
     }
     if (intent.bpm > 0.0)
     {
-        setBpm (intent.bpm);
+        setBpmFromUser (intent.bpm);
         done.add ("tempo -> " + juce::String ((int) projectParams.bpm) + " BPM");
     }
     if (intent.bpmDelta != 0.0)
     {
-        setBpm (projectParams.bpm + intent.bpmDelta);
+        setBpmFromUser (projectParams.bpm + intent.bpmDelta);
         done.add ("tempo -> " + juce::String ((int) projectParams.bpm) + " BPM");
     }
     if (! intent.root.empty())  projectParams.root  = intent.root;
@@ -1805,6 +1816,7 @@ void AIMidiGenProcessor::getStateInformation (juce::MemoryBlock& dest)
     root->setProperty ("previewAudition", previewAudition.load());
     root->setProperty ("criticSummary", criticSummary);
     root->setProperty ("genreMode", (int) genreMode);
+    root->setProperty ("helpSeen", helpSeen);
 
     // ---- The actual music: every lane's notes + lock/mute flags ----
     juce::Array<juce::var> lanes;
@@ -1879,6 +1891,7 @@ void AIMidiGenProcessor::setStateInformation (const void* data, int size)
     hostMidiOut.store ((bool) v.getProperty ("hostMidiOut", hostMidiOut.load()));
     previewAudition.store ((bool) v.getProperty ("previewAudition", previewAudition.load()));
     criticSummary = v.getProperty ("criticSummary", criticSummary).toString();
+    helpSeen = (bool) v.getProperty ("helpSeen", helpSeen);
 
     if (v.hasProperty ("genreMode"))
         genreMode = genreModeFromIndex ((int) v.getProperty ("genreMode", 0));

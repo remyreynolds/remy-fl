@@ -115,6 +115,11 @@ public:
 
     void sendChatMessage (const juce::String& userPrompt, ChatCallback callback);
 
+    /** Fire a minimal live request to verify the key / model / network.
+        Calls done on the message thread with a short human-readable verdict
+        ("Connected — … ready" or exactly what is wrong). */
+    void testConnection (std::function<void (bool ok, juce::String detail)> done);
+
     void sendPrompt (const juce::String& userPrompt,
                      const MusicParams& current,
                      const std::vector<bool>& lockedMask,
