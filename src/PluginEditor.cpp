@@ -824,7 +824,8 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
     };
     drumKitPanel.onMuteChanged = [this] (DrumPiece dp, bool muted)
     {
-        processor.drumPiece (dp).muted = muted;
+        pieceBaseMute[(size_t) dp] = muted;
+        syncEffectiveMutes(); // combines piece mute with lane mute/solo
         processor.rebuildDrumMasterPart();
         refreshMidiRoll();
     };
@@ -909,10 +910,12 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
     for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
     {
         if ((InstrumentType) t == InstrumentType::Drums)
-            baseMute[(size_t) t] = processor.drumPiece (DrumPiece::Kick).muted;
+            baseMute[(size_t) t] = processor.part (InstrumentType::Drums).muted;
         else
             baseMute[(size_t) t] = processor.part ((InstrumentType) t).muted;
     }
+    for (int dp = 0; dp < (int) DrumPiece::NumPieces; ++dp)
+        pieceBaseMute[(size_t) dp] = processor.drumPiece ((DrumPiece) dp).muted;
 
     refreshPanels();
     setFocusedLane (InstrumentType::Melody);
@@ -1001,7 +1004,8 @@ void AIMidiGenEditor::timerCallback()
     if (generatingUi)
     {
         midiRoll.repaint(); // shimmer animation
-        if (juce::Time::getMillisecondCounter() >= generatingClearAtMs)
+        if (generatingClearAtMs != 0
+            && juce::Time::getMillisecondCounter() >= generatingClearAtMs)
             clearGeneratingUi();
     }
 
@@ -1098,6 +1102,12 @@ void AIMidiGenEditor::handlePartTransform (InstrumentType type, const juce::Stri
                            : juce::String()));
                 safe->useLocalButton.setEnabled (safe->processor.hasPendingLocalOffer());
                 safe->refreshPanels();
+                // Don't leave the previous run's success line up — that reads
+                // as if this vary/continue worked.
+                safe->lastRunMeta.setText (
+                    juce::String (toString (type)) + " · " + mode
+                        + " failed — existing MIDI kept",
+                    juce::dontSendNotification);
                 return;
             }
 
@@ -1619,7 +1629,7 @@ void AIMidiGenEditor::reportGeneration (const GenerationReport& report, bool off
 
 void AIMidiGenEditor::runNewIdea()
 {
-    beginGeneratingUi();
+    beginGeneratingUi (false); // async: callback clears
     chatPanel.setBusy (true);
     juce::Component::SafePointer<AIMidiGenEditor> safe (this);
     processor.newIdeaPreferred ([safe] (GenerationReport report)
@@ -1634,7 +1644,7 @@ void AIMidiGenEditor::runNewIdea()
 
 void AIMidiGenEditor::generateFocusedLane()
 {
-    beginGeneratingUi();
+    beginGeneratingUi (false); // async: callback clears
     chatPanel.setBusy (true);
     juce::Component::SafePointer<AIMidiGenEditor> safe (this);
     processor.generatePreferredLane (focusedLane, [safe] (GenerationReport report)
@@ -1649,7 +1659,7 @@ void AIMidiGenEditor::generateFocusedLane()
 
 void AIMidiGenEditor::generateFocusedParts()
 {
-    beginGeneratingUi();
+    beginGeneratingUi (false); // both branches clear explicitly
     // Focused "Generate all" with Focus combo filters still uses the local
     // engine for the filtered subset (lane-by-lane Claude would mix plans).
     if (focusCombo.getSelectedId() > 1)
@@ -2115,8 +2125,11 @@ void AIMidiGenEditor::syncEffectiveMutes()
         const bool eff = baseMute[(size_t) t] || (anySolo && ! laneSolo[(size_t) t]);
         if ((InstrumentType) t == InstrumentType::Drums)
         {
+            // Per-piece kit mutes survive lane-level mute/solo: a piece is
+            // silent if the user muted IT or the whole drum lane is muted.
             for (int dp = 0; dp < (int) DrumPiece::NumPieces; ++dp)
-                processor.drumPiece ((DrumPiece) dp).muted = eff;
+                processor.drumPiece ((DrumPiece) dp).muted =
+                    eff || pieceBaseMute[(size_t) dp];
             processor.part (InstrumentType::Drums).muted = eff;
         }
         else
@@ -2126,10 +2139,12 @@ void AIMidiGenEditor::syncEffectiveMutes()
     }
 }
 
-void AIMidiGenEditor::beginGeneratingUi()
+void AIMidiGenEditor::beginGeneratingUi (bool autoClear)
 {
     generatingUi = true;
-    generatingClearAtMs = juce::Time::getMillisecondCounter() + 2400;
+    // autoClear=false for async AI requests: the completion callback owns
+    // clearing, so a 2.4s timer can't re-enable buttons mid-request.
+    generatingClearAtMs = autoClear ? juce::Time::getMillisecondCounter() + 2400 : 0;
     const auto name = juce::String (toString (focusedLane));
     midiRoll.setGenerating (true, name);
     trackDetail.setGenerating (true);

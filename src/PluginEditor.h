@@ -51,7 +51,7 @@ private:
     void refreshLastRunMeta();
     void applyWorkspaceFocus();
     void syncEffectiveMutes();
-    void beginGeneratingUi();
+    void beginGeneratingUi (bool autoClear = true);
     void clearGeneratingUi();
     bool isTypeInFocus (InstrumentType type) const;
     void generateFocusedParts();
@@ -149,6 +149,7 @@ private:
     juce::String lastSoundPicksGenre; // last genre announced as "Sound picks" in chat
     std::array<bool, (size_t) InstrumentType::NumTypes> laneSolo {};
     std::array<bool, (size_t) InstrumentType::NumTypes> baseMute {}; // user mute before solo overlay
+    std::array<bool, (size_t) DrumPiece::NumPieces> pieceBaseMute {}; // per-piece kit mutes (survive lane mute/solo)
     bool generatingUi = false;
     juce::uint32 generatingClearAtMs = 0;
     juce::String lastRunSeed;
