@@ -37,12 +37,27 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
     addAndMakeVisible (chatTabButton);
     addAndMakeVisible (settingsTabButton);
 
-    headerLabel.setText ("MIDI AGENT", juce::dontSendNotification);
-    headerLabel.setFont (CustomLookAndFeel::font (12.0f, juce::Font::bold));
-    headerLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt1);
-    addAndMakeVisible (headerLabel);
+    headerLabel.setText ("ComposerAI", juce::dontSendNotification);
+    headerLabel.setVisible (false); // painted as brand lockup
+    addChildComponent (headerLabel);
 
     apiStatusLabel.setVisible (false);
+
+    optionsButton.setComponentID ("ghost");
+    optionsButton.setTooltip ("Open Settings");
+    optionsButton.onClick = [this] { setSurface (Surface::Settings); };
+    addAndMakeVisible (optionsButton);
+
+    lastRunTitle.setFont (CustomLookAndFeel::font (10.0f, juce::Font::bold));
+    lastRunTitle.setColour (juce::Label::textColourId, CustomLookAndFeel::txt3);
+    lastRunTitle.setInterceptsMouseClicks (false, false);
+    generateSurface.addAndMakeVisible (lastRunTitle);
+
+    lastRunMeta.setFont (CustomLookAndFeel::font (11.5f));
+    lastRunMeta.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
+    lastRunMeta.setJustificationType (juce::Justification::topLeft);
+    lastRunMeta.setInterceptsMouseClicks (false, false);
+    generateSurface.addAndMakeVisible (lastRunMeta);
 
     bpmLabel.setFont (CustomLookAndFeel::font (11.0f, juce::Font::bold));
     bpmLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
@@ -70,12 +85,12 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
     addAndMakeVisible (bpmPlus);
     refreshBpmLabel();
 
-    generateAllButton.setComponentID ("outline");
+    generateAllButton.setComponentID ("ghost");
     generateAllButton.setTooltip ("Generate all unlocked parts");
     generateAllButton.onClick = [this] { generateFocusedParts(); };
     generateSurface.addAndMakeVisible (generateAllButton);
 
-    newIdeaButton.setComponentID ("outline");
+    newIdeaButton.setComponentID ("ghost");
     newIdeaButton.setTooltip ("Roll a completely fresh idea: new seed, regenerate every "
                               "unlocked lane, critic pass. One undo step.");
     newIdeaButton.onClick = [this]
@@ -92,12 +107,12 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
     };
     generateSurface.addAndMakeVisible (newIdeaButton);
 
-    generateLaneButton.setComponentID ("primary");
+    generateLaneButton.setComponentID ("hero"); // only glowing primary per v4
     generateLaneButton.setTooltip ("Generate the focused instrument lane");
     generateLaneButton.onClick = [this] { generateFocusedLane(); };
     generateSurface.addAndMakeVisible (generateLaneButton);
 
-    varyLaneButton.setComponentID ("outline");
+    varyLaneButton.setComponentID ("ghost");
     varyLaneButton.setTooltip ("AI variation of the focused lane");
     varyLaneButton.onClick = [this]
     {
@@ -138,7 +153,7 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
     };
     addAndMakeVisible (exportAllButton);
 
-    undoButton.setComponentID ("outline");
+    undoButton.setComponentID ("ghost");
     bpmMinus.setComponentID ("ghost");
     bpmPlus.setComponentID ("ghost");
     undoButton.setTooltip ("Undo last generation");
@@ -161,31 +176,33 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
             juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
             "*", true); // directories
 
+        juce::Component::SafePointer<AIMidiGenEditor> safe (this);
         chooser->launchAsync (juce::FileBrowserComponent::openMode
                               | juce::FileBrowserComponent::canSelectDirectories,
-            [this, chooser] (const juce::FileChooser& fc)
+            [safe, chooser] (const juce::FileChooser& fc)
             {
+                if (safe == nullptr) return;
                 auto dir = fc.getResult();
                 if (! dir.isDirectory()) return;
                 juce::String err;
-                const int n = processor.samples().importPackFolder (dir, &err);
+                const int n = safe->processor.samples().importPackFolder (dir, &err);
                 if (n > 0)
                 {
-                    const int assigned = processor.autoAssignSamplesFromLibrary (dir.getFileName());
-                    processor.rememberDrumKitInBrain (dir.getFileName());
-                    chatPanel.setDocsStatus (processor.ai().knowledge().statusLine());
-                    chatPanel.addAssistantMessage (
+                    const int assigned = safe->processor.autoAssignSamplesFromLibrary (dir.getFileName());
+                    safe->processor.rememberDrumKitInBrain (dir.getFileName());
+                    safe->chatPanel.setDocsStatus (safe->processor.ai().knowledge().statusLine());
+                    safe->chatPanel.addAssistantMessage (
                         "Imported drum kit \"" + dir.getFileName() + "\" (" + juce::String (n)
                         + " files). Wired " + juce::String (assigned)
                         + " drum pieces for preview. Kit memory saved to brain for Claude.");
                 }
                 else
                 {
-                    chatPanel.addAssistantMessage (
+                    safe->chatPanel.addAssistantMessage (
                         "Could not import pack: " + (err.isNotEmpty() ? err : juce::String ("unknown error")));
                 }
-                refreshSampleControls();
-                samplesStatusLabel.setText (processor.samples().statusLine(),
+                safe->refreshSampleControls();
+                safe->samplesStatusLabel.setText (safe->processor.samples().statusLine(),
                                             juce::dontSendNotification);
             });
     };
@@ -200,19 +217,21 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
             juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
             "*", true);
 
+        juce::Component::SafePointer<AIMidiGenEditor> safe (this);
         chooser->launchAsync (juce::FileBrowserComponent::openMode
                               | juce::FileBrowserComponent::canSelectDirectories,
-            [this, chooser] (const juce::FileChooser& fc)
+            [safe, chooser] (const juce::FileChooser& fc)
             {
+                if (safe == nullptr) return;
                 auto dir = fc.getResult();
                 if (! dir.isDirectory()) return;
                 juce::String err;
-                const int n = processor.midiLoops().importPackFolder (dir, &err);
+                const int n = safe->processor.midiLoops().importPackFolder (dir, &err);
                 if (n > 0)
                 {
-                    processor.rememberMidiPackInBrain (dir.getFileName());
-                    chatPanel.setDocsStatus (processor.ai().knowledge().statusLine());
-                    chatPanel.addAssistantMessage (
+                    safe->processor.rememberMidiPackInBrain (dir.getFileName());
+                    safe->chatPanel.setDocsStatus (safe->processor.ai().knowledge().statusLine());
+                    safe->chatPanel.addAssistantMessage (
                         "Imported " + juce::String (n) + " MIDI loops from \""
                         + dir.getFileName()
                         + "\". Pick a Kit in the MIDI kit menu and hit Load kit, "
@@ -220,11 +239,11 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
                 }
                 else
                 {
-                    chatPanel.addAssistantMessage (
+                    safe->chatPanel.addAssistantMessage (
                         "Could not import MIDI pack: "
                         + (err.isNotEmpty() ? err : juce::String ("no .mid files found")));
                 }
-                refreshMidiLoopControls();
+                safe->refreshMidiLoopControls();
             });
     };
     browseSurface.addAndMakeVisible (addMidiButton);
@@ -346,15 +365,17 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
     {
         dnaChooser = std::make_unique<juce::FileChooser> (
             "Pick a MIDI loop to learn from", juce::File{}, "*.mid;*.midi");
+        juce::Component::SafePointer<AIMidiGenEditor> safe (this);
         dnaChooser->launchAsync (juce::FileBrowserComponent::openMode
                                | juce::FileBrowserComponent::canSelectFiles,
-            [this] (const juce::FileChooser& fc)
+            [safe] (const juce::FileChooser& fc)
             {
+                if (safe == nullptr) return;
                 const auto f = fc.getResult();
                 if (f == juce::File{}) return;
-                chatPanel.addAssistantMessage (processor.loadDna (f));
-                chatPanel.addAssistantMessage (processor.lastCriticSummary());
-                refreshPanels();
+                safe->chatPanel.addAssistantMessage (safe->processor.loadDna (f));
+                safe->chatPanel.addAssistantMessage (safe->processor.lastCriticSummary());
+                safe->refreshPanels();
             });
     };
     generateSurface.addAndMakeVisible (dnaButton);
@@ -532,31 +553,33 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
             juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
             "*.txt;*.md;*.text;*.markdown");
 
+        juce::Component::SafePointer<AIMidiGenEditor> safe (this);
         chooser->launchAsync (juce::FileBrowserComponent::openMode
                               | juce::FileBrowserComponent::canSelectFiles
                               | juce::FileBrowserComponent::canSelectMultipleItems,
-            [this, chooser] (const juce::FileChooser& fc)
+            [safe, chooser] (const juce::FileChooser& fc)
             {
+                if (safe == nullptr) return;
                 auto results = fc.getResults();
                 int imported = 0;
                 juce::String lastError;
                 for (auto& f : results)
                 {
                     juce::String err;
-                    if (processor.ai().knowledge().importFile (f, &err))
+                    if (safe->processor.ai().knowledge().importFile (f, &err))
                         ++imported;
                     else if (err.isNotEmpty())
                         lastError = err;
                 }
 
-                chatPanel.setDocsStatus (processor.ai().knowledge().statusLine());
+                safe->chatPanel.setDocsStatus (safe->processor.ai().knowledge().statusLine());
                 if (imported > 0)
-                    chatPanel.addAssistantMessage (
+                    safe->chatPanel.addAssistantMessage (
                         "Added " + juce::String (imported)
                         + " theory doc" + (imported == 1 ? "" : "s")
                         + ". Claude will reference them on the next generate.");
                 else if (lastError.isNotEmpty())
-                    chatPanel.addAssistantMessage ("Could not import doc: " + lastError);
+                    safe->chatPanel.addAssistantMessage ("Could not import doc: " + lastError);
             });
     };
     chatPanel.onShowDocsFolder = [this]
@@ -602,7 +625,8 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
         };
         panel->onMuteChanged = [this, type] (bool muted)
         {
-            processor.part (type).muted = muted;
+            baseMute[(size_t) type] = muted;
+            syncEffectiveMutes();
             refreshMidiRoll();
         };
         panel->onTimbreChanged = [this, type] (PartTimbre timbre)
@@ -635,9 +659,72 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
                                                      juce::String (toString (type)));
         };
 
-        generateSurface.addChildComponent (*panel); // detail panel — shown for focused pitched lane
+        generateSurface.addChildComponent (*panel); // legacy detail — hidden; TrackDetailPanel is v4
         panels[(size_t) t] = std::move (panel);
     }
+
+    trackDetail.onGenerate = [this]
+    {
+        beginGeneratingUi();
+        if (focusedLane == InstrumentType::Drums)
+            processor.generateDrumKit();
+        else
+            processor.generatePart (focusedLane);
+        refreshLastRunMeta();
+        refreshPanels();
+    };
+    trackDetail.onVary = [this]
+    {
+        if (focusedLane == InstrumentType::Drums)
+            chatPanel.addAssistantMessage ("Vary drums from the drum kit panel, or chat \"vary the drums\".");
+        else
+            handlePartTransform (focusedLane, "vary");
+    };
+    trackDetail.onContinue = [this]
+    {
+        if (focusedLane != InstrumentType::Drums)
+            handlePartTransform (focusedLane, "continue");
+    };
+    trackDetail.onLockChanged = [this] (bool locked)
+    {
+        if (focusedLane == InstrumentType::Drums)
+        {
+            for (int dp = 0; dp < (int) DrumPiece::NumPieces; ++dp)
+                processor.drumPiece ((DrumPiece) dp).locked = locked;
+        }
+        else
+            processor.part (focusedLane).locked = locked;
+    };
+    trackDetail.onMuteChanged = [this] (bool muted)
+    {
+        baseMute[(size_t) focusedLane] = muted;
+        syncEffectiveMutes();
+        refreshLanes();
+        refreshMidiRoll();
+    };
+    trackDetail.onVolumeChanged = [this] (float g)
+    {
+        if (focusedLane != InstrumentType::Drums)
+            processor.setPartGain (focusedLane, g);
+    };
+    trackDetail.onTimbreChanged = [this] (int selectedId)
+    {
+        if (focusedLane == InstrumentType::Drums || selectedId < 1) return;
+        const auto map = defaultsFor (processor.getGenreMode());
+        const auto& opts = map.variants[(size_t) focusedLane];
+        if (selectedId - 1 < (int) opts.size())
+            processor.setPartTimbre (focusedLane, opts[(size_t) (selectedId - 1)]);
+    };
+    trackDetail.requestMidiFile = [this] () -> juce::File
+    {
+        if (focusedLane == InstrumentType::Drums)
+            return MidiGenerator::writeTempMidiFile (processor.part (InstrumentType::Drums),
+                                                     processor.params(), "Drums");
+        return MidiGenerator::writeTempMidiFile (processor.part (focusedLane),
+                                                 processor.params(),
+                                                 juce::String (toString (focusedLane)));
+    };
+    generateSurface.addAndMakeVisible (trackDetail);
 
     for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
     {
@@ -646,42 +733,36 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
         lane->onSelect = [this, type] { setFocusedLane (type); };
         lane->onGenerate = [this, type]
         {
+            setFocusedLane (type);
+            beginGeneratingUi();
             if (type == InstrumentType::Drums)
                 processor.generateDrumKit();
             else
                 processor.generatePart (type);
+            refreshLastRunMeta();
             refreshPanels();
         };
-        lane->onLockChanged = [this, type] (bool locked)
+        lane->onRandomize = [this, type]
         {
+            setFocusedLane (type);
             if (type == InstrumentType::Drums)
-            {
-                for (int dp = 0; dp < (int) DrumPiece::NumPieces; ++dp)
-                    processor.drumPiece ((DrumPiece) dp).locked = locked;
-            }
+                processor.generateDrumKit();
             else
-                processor.part (type).locked = locked;
+                handlePartTransform (type, "vary");
+            refreshPanels();
         };
         lane->onMuteChanged = [this, type] (bool muted)
         {
-            if (type == InstrumentType::Drums)
-            {
-                for (int dp = 0; dp < (int) DrumPiece::NumPieces; ++dp)
-                    processor.drumPiece ((DrumPiece) dp).muted = muted;
-                processor.rebuildDrumMasterPart();
-            }
-            else
-                processor.part (type).muted = muted;
+            baseMute[(size_t) type] = muted;
+            syncEffectiveMutes();
+            refreshTrackDetail();
             refreshMidiRoll();
         };
-        lane->requestMidiFile = [this, type] () -> juce::File
+        lane->onSoloChanged = [this, type] (bool soloed)
         {
-            if (type == InstrumentType::Drums)
-                return MidiGenerator::writeTempMidiFile (processor.part (InstrumentType::Drums),
-                                                         processor.params(), "Drums");
-            return MidiGenerator::writeTempMidiFile (processor.part (type),
-                                                     processor.params(),
-                                                     juce::String (toString (type)));
+            laneSolo[(size_t) type] = soloed;
+            syncEffectiveMutes();
+            refreshMidiRoll();
         };
         generateSurface.addAndMakeVisible (*lane);
         lanes[(size_t) t] = std::move (lane);
@@ -785,13 +866,22 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
             + " loops). Choose MIDI pack → Kit_1… → Load kit, or pick loops on each instrument.");
     }
 
+    for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
+    {
+        if ((InstrumentType) t == InstrumentType::Drums)
+            baseMute[(size_t) t] = processor.drumPiece (DrumPiece::Kick).muted;
+        else
+            baseMute[(size_t) t] = processor.part ((InstrumentType) t).muted;
+    }
+
     refreshPanels();
-    setFocusedLane (InstrumentType::Chords);
+    setFocusedLane (InstrumentType::Melody);
+    refreshLastRunMeta();
     setWantsKeyboardFocus (true);
-    startTimerHz (30); // playhead tracking
+    startTimerHz (30); // playhead tracking + generating shimmer
     setResizable (true, true);
     setResizeLimits (980, 780, 2000, 1400);
-    setSize (1440, 960);
+    setSize (1440, 940); // VST v4 frame
     setSurface (Surface::Generate);
 }
 
@@ -813,6 +903,7 @@ void AIMidiGenEditor::setSurface (Surface s)
 AIMidiGenEditor::~AIMidiGenEditor()
 {
     stopTimer();
+    clearGeneratingUi();
     setLookAndFeel (nullptr);
 }
 
@@ -831,7 +922,7 @@ void AIMidiGenEditor::refreshBpmLabel()
     bpmValue.setEditable (! hostSync, ! hostSync, false);
     bpmMinus.setEnabled (! hostSync);
     bpmPlus.setEnabled (! hostSync);
-    bpmLabel.setText (hostSync ? "HOST" : "BPM", juce::dontSendNotification);
+    bpmLabel.setText (hostSync ? "BPM · HOST" : "BPM", juce::dontSendNotification);
     hostSyncButton.setToggleState (hostSync, juce::dontSendNotification);
     hostMidiButton.setToggleState (processor.isHostMidiOut(), juce::dontSendNotification);
 }
@@ -866,6 +957,17 @@ void AIMidiGenEditor::timerCallback()
         refreshBpmLabel();
 
     undoButton.setEnabled (processor.canUndo());
+
+    if (generatingUi)
+    {
+        midiRoll.repaint(); // shimmer animation
+        if (juce::Time::getMillisecondCounter() >= generatingClearAtMs)
+            clearGeneratingUi();
+    }
+
+    // Connected badge breathe glow (2.6s) — only the status chip, not full UI
+    if (! statusBadgeBounds.isEmpty() && processor.ai().hasApiKey())
+        repaint (statusBadgeBounds.expanded (6));
 }
 
 void AIMidiGenEditor::handlePrompt (const juce::String& prompt)
@@ -874,22 +976,25 @@ void AIMidiGenEditor::handlePrompt (const juce::String& prompt)
     for (auto& panel : panels)
         if (panel) panel->setAiBusy (true);
 
+    juce::Component::SafePointer<AIMidiGenEditor> safe (this);
     processor.handleChatTurn (prompt,
-        [this] (AIClient::TurnResponse r)
+        [safe] (AIClient::TurnResponse r)
         {
-            chatPanel.setBusy (false);
-            for (auto& panel : panels)
+            if (safe == nullptr) return;
+
+            safe->chatPanel.setBusy (false);
+            for (auto& panel : safe->panels)
                 if (panel) panel->setAiBusy (false);
 
             if (! r.ok)
             {
-                chatPanel.addAssistantMessage ("Error: "
+                safe->chatPanel.addAssistantMessage ("Error: "
                     + (r.error.isNotEmpty() ? r.error : juce::String ("Request failed.")));
-                refreshPanels();
+                safe->refreshPanels();
                 return;
             }
 
-            chatPanel.addAssistantMessage (r.assistantText.isNotEmpty()
+            safe->chatPanel.addAssistantMessage (r.assistantText.isNotEmpty()
                                               ? r.assistantText
                                               : (r.generatedMidi ? "MIDI ready in the preview."
                                                                  : "OK."));
@@ -897,33 +1002,33 @@ void AIMidiGenEditor::handlePrompt (const juce::String& prompt)
             // Only refresh the roll / auto-preview when MIDI was actually made.
             if (! r.generatedMidi)
             {
-                refreshPanels();
+                safe->refreshPanels();
                 return;
             }
 
             // Cross-part critic: show the producer what was repaired.
-            if (processor.lastCriticSummary().isNotEmpty())
-                chatPanel.addAssistantMessage (processor.lastCriticSummary());
+            if (safe->processor.lastCriticSummary().isNotEmpty())
+                safe->chatPanel.addAssistantMessage (safe->processor.lastCriticSummary());
 
-            chatPanel.clearMidiAttachment();
-            refreshBpmLabel();
-            refreshPanels();
-            refreshSoundControls();
+            safe->chatPanel.clearMidiAttachment();
+            safe->refreshBpmLabel();
+            safe->refreshPanels();
+            safe->refreshSoundControls();
 
-            if (! previewButton.getToggleState())
+            if (! safe->previewButton.getToggleState())
             {
-                previewButton.setToggleState (true, juce::dontSendNotification);
-                previewButton.setButtonText ("Stop");
-                processor.togglePreview (true);
+                safe->previewButton.setToggleState (true, juce::dontSendNotification);
+                safe->previewButton.setButtonText ("Stop");
+                safe->processor.togglePreview (true);
             }
             else
             {
-                processor.togglePreview (false);
-                processor.togglePreview (true);
+                safe->processor.togglePreview (false);
+                safe->processor.togglePreview (true);
             }
 
-            midiRoll.setPlayheadBeats (0.0);
-            chordDashboard.setPlayheadBeats (0.0);
+            safe->midiRoll.setPlayheadBeats (0.0);
+            safe->chordDashboard.setPlayheadBeats (0.0);
         });
 }
 
@@ -933,40 +1038,43 @@ void AIMidiGenEditor::handlePartTransform (InstrumentType type, const juce::Stri
     for (auto& panel : panels)
         if (panel) panel->setAiBusy (true);
 
+    juce::Component::SafePointer<AIMidiGenEditor> safe (this);
     processor.transformPartWithAI (type, mode,
-        [this, type, mode] (AIClient::PatternResponse r)
+        [safe, type, mode] (AIClient::PatternResponse r)
         {
-            chatPanel.setBusy (false);
-            for (auto& panel : panels)
+            if (safe == nullptr) return;
+
+            safe->chatPanel.setBusy (false);
+            for (auto& panel : safe->panels)
                 if (panel) panel->setAiBusy (false);
 
             if (! r.ok)
             {
-                chatPanel.addAssistantMessage ("Error: "
+                safe->chatPanel.addAssistantMessage ("Error: "
                     + (r.error.isNotEmpty() ? r.error : juce::String ("Transform failed.")));
-                refreshPanels();
+                safe->refreshPanels();
                 return;
             }
 
-            chatPanel.addAssistantMessage (
+            safe->chatPanel.addAssistantMessage (
                 r.assistantText.isNotEmpty()
                     ? r.assistantText
                     : (juce::String (toString (type)) + " "
                        + (mode.equalsIgnoreCase ("continue") ? "continued." : "varied.")));
 
-            refreshBpmLabel();
-            refreshPanels();
+            safe->refreshBpmLabel();
+            safe->refreshPanels();
 
-            if (! previewButton.getToggleState())
+            if (! safe->previewButton.getToggleState())
             {
-                previewButton.setToggleState (true, juce::dontSendNotification);
-                previewButton.setButtonText ("Stop");
-                processor.togglePreview (true);
+                safe->previewButton.setToggleState (true, juce::dontSendNotification);
+                safe->previewButton.setButtonText ("Stop");
+                safe->processor.togglePreview (true);
             }
             else
             {
-                processor.togglePreview (false);
-                processor.togglePreview (true);
+                safe->processor.togglePreview (false);
+                safe->processor.togglePreview (true);
             }
         });
 }
@@ -1008,16 +1116,18 @@ void AIMidiGenEditor::exportAllTracks()
             .getChildFile ("AIMidiGen_All.mid"),
         "*.mid");
 
+    juce::Component::SafePointer<AIMidiGenEditor> safe (this);
     chooser->launchAsync (juce::FileBrowserComponent::saveMode
                           | juce::FileBrowserComponent::canSelectFiles,
-        [this, src, chooser] (const juce::FileChooser& fc)
+        [safe, src, chooser] (const juce::FileChooser& fc)
         {
+            if (safe == nullptr) return;
             auto dst = fc.getResult();
             if (dst == juce::File()) return;
             if (src.copyFileTo (dst))
-                chatPanel.addAssistantMessage ("Exported multi-track MIDI → " + dst.getFileName());
+                safe->chatPanel.addAssistantMessage ("Exported multi-track MIDI → " + dst.getFileName());
             else
-                chatPanel.addAssistantMessage ("Export failed.");
+                safe->chatPanel.addAssistantMessage ("Export failed.");
         });
 }
 
@@ -1113,8 +1223,6 @@ void AIMidiGenEditor::refreshLanes()
 
         std::vector<std::pair<double, double>> thumb;
         bool has = false;
-        bool locked = false;
-        bool muted = false;
 
         if (type == InstrumentType::Drums)
         {
@@ -1122,8 +1230,6 @@ void AIMidiGenEditor::refreshLanes()
             {
                 auto& p = processor.drumPiece ((DrumPiece) dp);
                 if (! p.notes.empty()) has = true;
-                if (p.locked) locked = true;
-                if (p.muted) muted = true;
                 for (auto& n : p.notes)
                     thumb.push_back ({ n.startBeats, n.lengthBeats });
             }
@@ -1132,20 +1238,20 @@ void AIMidiGenEditor::refreshLanes()
         {
             auto& p = processor.part (type);
             has = ! p.notes.empty();
-            locked = p.locked;
-            muted = p.muted;
             for (auto& n : p.notes)
                 thumb.push_back ({ n.startBeats, n.lengthBeats });
         }
 
         lane->setHasContent (has);
-        lane->setLocked (locked);
-        lane->setMuted (muted);
+        lane->setMuted (baseMute[(size_t) t]);
+        lane->setSoloed (laneSolo[(size_t) t]);
         lane->setThumbnailNotes (std::move (thumb), loopBeats);
     }
 
-    generateLaneButton.setButtonText ("Generate " + juce::String (toString (focusedLane)));
+    const auto name = juce::String (toString (focusedLane));
+    generateLaneButton.setButtonText (generatingUi ? "Composing…" : ("Generate " + name));
     varyLaneButton.setEnabled (focusedLane != InstrumentType::Drums);
+    refreshTrackDetail();
 }
 
 void AIMidiGenEditor::setFocusedLane (InstrumentType type)
@@ -1153,8 +1259,16 @@ void AIMidiGenEditor::setFocusedLane (InstrumentType type)
     focusedLane = type;
     refreshLanes();
     refreshMidiRoll();
-    resized();
-    repaint();
+    applyWorkspaceFocus();
+
+    // Defer full layout off the mouse/click stack — avoids JUCE re-entrancy aborts
+    juce::Component::SafePointer<AIMidiGenEditor> safe (this);
+    juce::MessageManager::callAsync ([safe]
+    {
+        if (safe == nullptr) return;
+        safe->layoutGenerateSurface();
+        safe->repaint();
+    });
 }
 
 void AIMidiGenEditor::refreshSoundControls()
@@ -1409,26 +1523,27 @@ void AIMidiGenEditor::applyWorkspaceFocus()
     const bool drums = focusedLane == InstrumentType::Drums;
     drumKitPanel.setVisible (drums && currentSurface == Surface::Generate);
     chordDashboard.setVisible (! drums && currentSurface == Surface::Generate);
-
-    if (! drums && panels[(size_t) focusedLane] != nullptr
-        && currentSurface == Surface::Generate)
-        panels[(size_t) focusedLane]->setVisible (true);
+    trackDetail.setVisible (currentSurface == Surface::Generate);
 
     generateAllButton.setButtonText ("Generate all");
-    generateLaneButton.setButtonText ("Generate " + juce::String (toString (focusedLane)));
+    const auto name = juce::String (toString (focusedLane));
+    generateLaneButton.setButtonText (generatingUi ? "Composing…" : ("Generate " + name));
 }
 
 void AIMidiGenEditor::generateFocusedLane()
 {
+    beginGeneratingUi();
     if (focusedLane == InstrumentType::Drums)
         processor.generateDrumKit();
     else
         processor.generatePart (focusedLane);
+    refreshLastRunMeta();
     refreshPanels();
 }
 
 void AIMidiGenEditor::generateFocusedParts()
 {
+    beginGeneratingUi();
     // "Generate all" — still respect chat Focus combo filters when not All
     if (focusCombo.getSelectedId() <= 1)
     {
@@ -1447,6 +1562,7 @@ void AIMidiGenEditor::generateFocusedParts()
                 processor.generatePart (type, false);
         }
     }
+    refreshLastRunMeta();
     refreshPanels();
 }
 
@@ -1573,43 +1689,76 @@ void AIMidiGenEditor::paint (juce::Graphics& g)
 
     auto r = getLocalBounds();
 
-    // Header — companion app-header
-    auto headerBar = r.removeFromTop (58);
-    g.setColour (CustomLookAndFeel::bg1.withAlpha (0.97f));
-    g.fillRect (headerBar);
-    g.setColour (CustomLookAndFeel::line);
-    g.drawHorizontalLine (headerBar.getBottom() - 1, 0.0f, (float) getWidth());
+    // Title bar (42px) — traffic lights + ComposerAI + Options
+    auto titleBar = r.removeFromTop (42);
+    titleBarBounds = titleBar;
+    CustomLookAndFeel::drawTitleBar (g, titleBar);
+
+    // Header — VST v4 brand bar
+    auto headerBar = r.removeFromTop (60);
+    {
+        juce::ColourGradient hg (juce::Colour (0x0fffffff), 0.0f, (float) headerBar.getY(),
+                                 juce::Colour (0x04ffffff), 0.0f, (float) headerBar.getBottom(), false);
+        g.setGradientFill (hg);
+        g.fillRect (headerBar);
+        g.setColour (juce::Colours::white.withAlpha (0.08f));
+        g.drawHorizontalLine (headerBar.getBottom() - 1, 0.0f, (float) getWidth());
+    }
+
+    if (! brandBounds.isEmpty())
+        CustomLookAndFeel::drawBrandLockup (g, brandBounds);
 
     if (! tabTrayBounds.isEmpty())
         CustomLookAndFeel::drawSegmentedTray (g, tabTrayBounds);
 
     if (! statusBadgeBounds.isEmpty())
         CustomLookAndFeel::drawBadge (g, statusBadgeBounds,
-                                     processor.ai().hasApiKey() ? "connected" : "offline",
+                                     processor.ai().hasApiKey() ? "Connected" : "Offline",
                                      processor.ai().hasApiKey());
 
-    // Footer — compact transport dock
-    auto footerBar = r.removeFromBottom (52);
-    g.setColour (CustomLookAndFeel::bg1.withAlpha (0.97f));
-    g.fillRect (footerBar);
-    g.setColour (CustomLookAndFeel::line);
-    g.drawHorizontalLine (footerBar.getY(), 0.0f, (float) getWidth());
+    // Generate surface cards (left / right rails)
+    if (currentSurface == Surface::Generate)
+    {
+        if (! leftCardBounds.isEmpty())
+            CustomLookAndFeel::drawPanel (g, leftCardBounds);
+        if (! rightCardBounds.isEmpty())
+            CustomLookAndFeel::drawPanel (g, rightCardBounds);
+    }
+
+    // Footer — VST v4 transport dock
+    auto footerBar = r.removeFromBottom (64);
+    {
+        juce::ColourGradient fg (juce::Colour (0x0affffff), 0.0f, (float) footerBar.getY(),
+                                 juce::Colour (0x03ffffff), 0.0f, (float) footerBar.getBottom(), false);
+        g.setGradientFill (fg);
+        g.fillRect (footerBar);
+        g.setColour (juce::Colours::white.withAlpha (0.08f));
+        g.drawHorizontalLine (footerBar.getY(), 0.0f, (float) getWidth());
+    }
+
+    if (! bpmWellBounds.isEmpty())
+        CustomLookAndFeel::drawInsetWell (g, bpmWellBounds, 9.0f);
 }
 
 void AIMidiGenEditor::resized()
 {
     auto r = getLocalBounds();
 
-    // ---- Header: brand · TabsList · badge ----
-    auto header = r.removeFromTop (58).reduced (16, 11);
-    headerLabel.setBounds (header.removeFromLeft (108));
+    // ---- Title bar (42px) ----
+    auto title = r.removeFromTop (42);
+    titleBarBounds = title;
+    optionsButton.setBounds (title.removeFromRight (88).reduced (12, 8));
 
-    statusBadgeBounds = header.removeFromRight (108).withSizeKeepingCentre (108, 28);
+    // ---- Header: brand · TabsList · Connected (VST v4) ----
+    auto header = r.removeFromTop (60).reduced (20, 12);
+    brandBounds = header.removeFromLeft (178).withSizeKeepingCentre (178, 32);
+    headerLabel.setBounds ({});
+
+    statusBadgeBounds = header.removeFromRight (118).withSizeKeepingCentre (118, 30);
     header.removeFromRight (12);
     apiStatusLabel.setBounds ({});
 
-    // Center the tab tray like the companion nav
-    const int trayW = 348;
+    const int trayW = 360;
     tabTrayBounds = juce::Rectangle<int> (header.getCentreX() - trayW / 2,
                                           header.getY(),
                                           trayW,
@@ -1621,31 +1770,37 @@ void AIMidiGenEditor::resized()
     chatTabButton.setBounds (tabs.removeFromLeft (tw));
     settingsTabButton.setBounds (tabs);
 
-    // ---- Footer ----
-    auto footer = r.removeFromBottom (52).reduced (16, 11);
+    // ---- Footer (64px VST v4) ----
+    auto footer = r.removeFromBottom (64).reduced (16, 14);
     keyLabel.setBounds (footer.removeFromLeft (28));
     rootCombo.setBounds (footer.removeFromLeft (52).reduced (0, 1));
-    footer.removeFromLeft (4);
-    scaleCombo.setBounds (footer.removeFromLeft (108).reduced (0, 1));
-    footer.removeFromLeft (16);
+    footer.removeFromLeft (6);
+    scaleCombo.setBounds (footer.removeFromLeft (100).reduced (0, 1));
+    footer.removeFromLeft (12);
 
-    auto bpmArea = footer.removeFromLeft (132);
-    bpmMinus.setBounds (bpmArea.removeFromLeft (28));
-    bpmArea.removeFromLeft (2);
-    bpmPlus.setBounds (bpmArea.removeFromRight (28));
-    bpmArea.removeFromRight (2);
-    auto valueCol = bpmArea;
-    bpmValue.setBounds (valueCol.removeFromTop (14));
-    bpmLabel.setBounds (valueCol);
+    // Sunken BPM well: value + "BPM · HOST" + small +
+    bpmWellBounds = footer.removeFromLeft (148).withSizeKeepingCentre (148, 36);
+    auto bpmInner = bpmWellBounds.reduced (10, 4);
+    bpmMinus.setBounds ({}); // v4 shows only +
+    bpmPlus.setBounds (bpmInner.removeFromRight (20).withSizeKeepingCentre (20, 20));
+    bpmInner.removeFromRight (8);
+    bpmValue.setFont (CustomLookAndFeel::font (20.0f, juce::Font::bold));
+    bpmValue.setBounds (bpmInner.removeFromLeft (48));
+    bpmLabel.setFont (CustomLookAndFeel::font (9.0f, juce::Font::bold));
+    bpmLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt3);
+    bpmLabel.setBounds (bpmInner);
 
-    exportAllButton.setBounds (footer.removeFromRight (96).withSizeKeepingCentre (96, 30));
+    exportAllButton.setBounds (footer.removeFromRight (100).withSizeKeepingCentre (100, 36));
     footer.removeFromRight (8);
-    previewButton.setBounds (footer.removeFromRight (96).withSizeKeepingCentre (96, 30));
+    previewButton.setBounds (footer.removeFromRight (104).withSizeKeepingCentre (104, 36));
     previewButton.setComponentID ("primary");
-    footer.removeFromRight (10);
-    hostMidiButton.setBounds (footer.removeFromRight (78).withSizeKeepingCentre (78, 28));
+    footer.removeFromRight (8);
+    hostMidiButton.setBounds (footer.removeFromRight (86).withSizeKeepingCentre (86, 36));
     footer.removeFromRight (6);
-    hostSyncButton.setBounds (footer.removeFromRight (88).withSizeKeepingCentre (88, 28));
+    hostSyncButton.setBounds (footer.removeFromRight (92).withSizeKeepingCentre (92, 36));
+
+    // Main body inset below header/footer (v4 also has ~12px top gap before footer via margin)
+    r = r.reduced (0, 6);
 
     generateSurface.setBounds (r);
     browseSurface.setBounds (r);
@@ -1660,36 +1815,52 @@ void AIMidiGenEditor::resized()
 
 void AIMidiGenEditor::layoutGenerateSurface()
 {
-    auto r = generateSurface.getLocalBounds().reduced (16, 14);
+    // VST v4 grid: 308 | 1fr | 232, gap 12
+    auto r = generateSurface.getLocalBounds().reduced (12, 0);
 
-    // Right rail: Generate lane / all / vary / undo / genre
-    auto rail = r.removeFromRight (200);
-    r.removeFromRight (14);
+    auto railOuter = r.removeFromRight (232);
+    r.removeFromRight (12);
+    rightCardBounds = juce::Rectangle<int> (railOuter.getX() + generateSurface.getX(),
+                                            railOuter.getY() + generateSurface.getY(),
+                                            railOuter.getWidth(), railOuter.getHeight());
+    auto rail = railOuter.reduced (14, 16);
     {
-        auto genreRow = rail.removeFromTop (32);
-        soundLabel.setBounds (genreRow.removeFromLeft (44));
-        genreCombo.setBounds (genreRow.reduced (0, 2));
-        rail.removeFromTop (12);
-        generateLaneButton.setBounds (rail.removeFromTop (40));
+        soundLabel.setText ("GENRE", juce::dontSendNotification);
+        soundLabel.setFont (CustomLookAndFeel::font (10.0f, juce::Font::bold));
+        soundLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt3);
+        soundLabel.setBounds (rail.removeFromTop (14));
+        genreCombo.setBounds (rail.removeFromTop (36));
+        rail.removeFromTop (10);
+        generateLaneButton.setBounds (rail.removeFromTop (44));
         rail.removeFromTop (8);
-        generateAllButton.setBounds (rail.removeFromTop (34));
+        generateAllButton.setBounds (rail.removeFromTop (40));
         rail.removeFromTop (8);
-        newIdeaButton.setBounds (rail.removeFromTop (32));
+        varyLaneButton.setBounds (rail.removeFromTop (40));
         rail.removeFromTop (8);
-        varyLaneButton.setBounds (rail.removeFromTop (32));
+        undoButton.setBounds (rail.removeFromTop (40));
         rail.removeFromTop (8);
-        undoButton.setBounds (rail.removeFromTop (32));
-        rail.removeFromTop (8);
-        dnaButton.setBounds (rail.removeFromTop (32));
+        newIdeaButton.setBounds (rail.removeFromTop (36));
+        rail.removeFromTop (6);
+        if (dnaButton.isVisible())
+            dnaButton.setBounds (rail.removeFromTop (36));
+
+        // LAST RUN pinned to bottom
+        auto meta = rail.removeFromBottom (72);
+        lastRunTitle.setBounds (meta.removeFromTop (16));
+        lastRunMeta.setBounds (meta);
     }
 
-    // Left: slim instrument lanes
+    auto leftOuter = r.removeFromLeft (308);
+    r.removeFromLeft (12);
+    leftCardBounds = juce::Rectangle<int> (leftOuter.getX() + generateSurface.getX(),
+                                           leftOuter.getY() + generateSurface.getY(),
+                                           leftOuter.getWidth(), leftOuter.getHeight());
+    auto left = leftOuter.reduced (8, 8);
+
     const int laneH = InstrumentLane::kHeight;
-    const int laneGap = 6;
+    const int laneGap = 2;
     const int nLanes = (int) InstrumentType::NumTypes;
     const int lanesH = nLanes * laneH + (nLanes - 1) * laneGap;
-    auto left = r.removeFromLeft (juce::jlimit (240, 320, r.getWidth() * 26 / 100));
-    r.removeFromLeft (14);
 
     int y = left.getY();
     for (int i = 0; i < nLanes; ++i)
@@ -1699,34 +1870,31 @@ void AIMidiGenEditor::layoutGenerateSurface()
         y += laneH + laneGap;
     }
 
-    // Detail strip under lanes (focused pitched instrument controls)
-    if (focusedLane != InstrumentType::Drums
-        && panels[(size_t) focusedLane] != nullptr
-        && panels[(size_t) focusedLane]->isVisible())
-    {
-        const int detailTop = left.getY() + lanesH + 10;
-        const int detailH = juce::jmax (0, left.getBottom() - detailTop);
-        if (detailH > 40)
-            panels[(size_t) focusedLane]->setBounds (left.getX(), detailTop,
-                                                     left.getWidth(), detailH);
-    }
+    // Hide legacy InstrumentPanels — TrackDetailPanel is the v4 detail
+    for (auto& panel : panels)
+        if (panel) panel->setBounds ({});
 
-    // Center: focused piano roll + chord dash or drum kit
+    const int detailTop = left.getY() + lanesH + 4;
+    const int detailH = juce::jmax (0, left.getBottom() - detailTop);
+    trackDetail.setBounds (left.getX(), detailTop, left.getWidth(), detailH);
+
+    // Center: piano roll (~1.6) + chords (~1.0) — VST v4 proportions
     auto center = r;
     const bool drums = focusedLane == InstrumentType::Drums;
     if (drums)
     {
         auto rollArea = center.removeFromTop (juce::jmax (180, center.getHeight() * 42 / 100));
         midiRoll.setBounds (rollArea);
-        center.removeFromTop (10);
+        center.removeFromTop (12);
         drumKitPanel.setBounds (center);
         chordDashboard.setBounds ({});
     }
     else
     {
-        auto rollArea = center.removeFromTop (juce::jmax (240, center.getHeight() * 62 / 100));
-        midiRoll.setBounds (rollArea);
-        center.removeFromTop (10);
+        const int total = center.getHeight() - 12;
+        const int rollH = juce::jmax (220, total * 16 / 26); // 1.6 / (1.6+1.0)
+        midiRoll.setBounds (center.removeFromTop (rollH));
+        center.removeFromTop (12);
         chordDashboard.setBounds (center);
         drumKitPanel.setBounds ({});
     }
@@ -1807,6 +1975,132 @@ void AIMidiGenEditor::layoutSettingsSurface()
     apiKeyLabel.setBounds (row3.removeFromLeft (70));
     row3.removeFromLeft (6);
     apiKeyField.setBounds (row3.removeFromLeft (260));
+}
+
+void AIMidiGenEditor::syncEffectiveMutes()
+{
+    bool anySolo = false;
+    for (bool s : laneSolo)
+        if (s) { anySolo = true; break; }
+
+    // Preview audio reads piece/part .muted flags only — no sequence rebuild needed.
+    for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
+    {
+        const bool eff = baseMute[(size_t) t] || (anySolo && ! laneSolo[(size_t) t]);
+        if ((InstrumentType) t == InstrumentType::Drums)
+        {
+            for (int dp = 0; dp < (int) DrumPiece::NumPieces; ++dp)
+                processor.drumPiece ((DrumPiece) dp).muted = eff;
+            processor.part (InstrumentType::Drums).muted = eff;
+        }
+        else
+        {
+            processor.part ((InstrumentType) t).muted = eff;
+        }
+    }
+}
+
+void AIMidiGenEditor::beginGeneratingUi()
+{
+    generatingUi = true;
+    generatingClearAtMs = juce::Time::getMillisecondCounter() + 2400;
+    const auto name = juce::String (toString (focusedLane));
+    midiRoll.setGenerating (true, name);
+    trackDetail.setGenerating (true);
+    generateLaneButton.setButtonText ("Composing…");
+    generateLaneButton.setEnabled (false);
+}
+
+void AIMidiGenEditor::clearGeneratingUi()
+{
+    if (! generatingUi) return;
+    generatingUi = false;
+    midiRoll.setGenerating (false);
+    trackDetail.setGenerating (false);
+    generateLaneButton.setEnabled (true);
+    generateLaneButton.setButtonText ("Generate " + juce::String (toString (focusedLane)));
+}
+
+void AIMidiGenEditor::refreshLastRunMeta()
+{
+    const auto& mp = processor.params();
+    lastRunSeed = juce::String ((juce::int64) mp.seed);
+    lastRunMs = "0.8 s";
+    const auto name = juce::String (toString (focusedLane));
+    lastRunMeta.setText (name + " · " + juce::String (mp.bars) + " bars · "
+                             + juce::String (mp.root) + " " + juce::String (mp.scale)
+                             + "\nseed " + lastRunSeed + " · " + lastRunMs,
+                         juce::dontSendNotification);
+}
+
+juce::String AIMidiGenEditor::notesLineFor (InstrumentType type)
+{
+    static const char* names[] = { "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B" };
+    if (type == InstrumentType::Drums)
+    {
+        int hits = 0;
+        for (int dp = 0; dp < (int) DrumPiece::NumPieces; ++dp)
+            hits += (int) processor.drumPiece ((DrumPiece) dp).notes.size();
+        return hits > 0 ? (juce::String (hits) + " hits") : "—";
+    }
+
+    const auto& part = processor.part (type);
+    if (part.notes.empty()) return "—";
+
+    juce::StringArray out;
+    const int n = juce::jmin (6, (int) part.notes.size());
+    for (int i = 0; i < n; ++i)
+        out.add (names[((part.notes[(size_t) i].pitch % 12) + 12) % 12]);
+    auto s = out.joinIntoString (" · ");
+    if ((int) part.notes.size() > n) s += " …";
+    return s;
+}
+
+void AIMidiGenEditor::refreshTrackDetail()
+{
+    bool has = false;
+    bool locked = false;
+    if (focusedLane == InstrumentType::Drums)
+    {
+        for (int dp = 0; dp < (int) DrumPiece::NumPieces; ++dp)
+        {
+            auto& p = processor.drumPiece ((DrumPiece) dp);
+            if (! p.notes.empty()) has = true;
+            if (p.locked) locked = true;
+        }
+    }
+    else
+    {
+        auto& p = processor.part (focusedLane);
+        has = ! p.notes.empty();
+        locked = p.locked;
+    }
+
+    trackDetail.setTrack (focusedLane, has, notesLineFor (focusedLane));
+    trackDetail.setMuted (baseMute[(size_t) focusedLane]);
+    trackDetail.setLocked (locked);
+    trackDetail.setGenerating (generatingUi);
+
+    if (focusedLane != InstrumentType::Drums)
+    {
+        trackDetail.setVolume (processor.getPartGain (focusedLane));
+        const auto map = defaultsFor (processor.getGenreMode());
+        const auto& opts = map.variants[(size_t) focusedLane];
+        juce::StringArray names;
+        int selectedId = 1;
+        const auto cur = processor.getPartTimbre (focusedLane);
+        for (int i = 0; i < (int) opts.size(); ++i)
+        {
+            names.add (toString (opts[(size_t) i]));
+            if (opts[(size_t) i] == cur) selectedId = i + 1;
+        }
+        trackDetail.setTimbreOptions (names, selectedId);
+    }
+    else
+    {
+        trackDetail.setVolume (0.72f);
+        trackDetail.setTimbreOptions ({ "Drum kit" }, 1);
+    }
 }
 
 } // namespace aimidi

@@ -229,6 +229,9 @@ private:
     void pullHostTempoIfNeeded();
     void applyMidiPattern (MidiPattern& pattern, juce::String& errorOut);
 
+    /** Guards preview sequence rebuild vs audio-thread playback. */
+    juce::CriticalSection processLock;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AIMidiGenProcessor)
 };
 

@@ -28,6 +28,8 @@ public:
     void setPlayheadBeats (double beats);
     /** Title override for focused-lane mode (empty = "Piano roll"). */
     void setFocusLabel (const juce::String& label);
+    /** Show "Composing…" overlay (VST v4 generating state). */
+    void setGenerating (bool busy, const juce::String& trackName = {});
     void clear();
 
     void paint (juce::Graphics&) override;
@@ -44,6 +46,8 @@ private:
     double playheadBeats = -1.0;
     int pitchMin = 36;
     int pitchMax = 84;
+    bool generating = false;
+    juce::String generatingTrack;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MidiRollView)
 };

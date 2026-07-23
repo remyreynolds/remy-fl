@@ -6,6 +6,7 @@
 #include "gui/ChatPanel.h"
 #include "gui/InstrumentPanel.h"
 #include "gui/InstrumentLane.h"
+#include "gui/TrackDetailPanel.h"
 #include "gui/DrumKitPanel.h"
 #include "gui/MidiRollView.h"
 #include "gui/ChordDashboardView.h"
@@ -46,7 +47,12 @@ private:
     void refreshSampleControls();
     void refreshMidiLoopControls();
     void refreshProviderUi();
+    void refreshTrackDetail();
+    void refreshLastRunMeta();
     void applyWorkspaceFocus();
+    void syncEffectiveMutes();
+    void beginGeneratingUi();
+    void clearGeneratingUi();
     bool isTypeInFocus (InstrumentType type) const;
     void generateFocusedParts();
     void generateFocusedLane();
@@ -54,6 +60,7 @@ private:
     void nudgeBpm (int delta);
     void timerCallback() override;
     InstrumentType pickPartForMidiAttach() const;
+    juce::String notesLineFor (InstrumentType type);
 
     AIMidiGenProcessor& processor;
     CustomLookAndFeel   lnf;
@@ -74,8 +81,16 @@ private:
 
     juce::Label   headerLabel;
     juce::Label   apiStatusLabel;
+    juce::TextButton optionsButton { "Options" };
+    juce::Label   lastRunTitle { {}, "LAST RUN" };
+    juce::Label   lastRunMeta;
+    juce::Rectangle<int> titleBarBounds;
     juce::Rectangle<int> tabTrayBounds;
     juce::Rectangle<int> statusBadgeBounds;
+    juce::Rectangle<int> brandBounds;
+    juce::Rectangle<int> leftCardBounds;
+    juce::Rectangle<int> rightCardBounds;
+    juce::Rectangle<int> bpmWellBounds;
     juce::Label   bpmLabel { {}, "BPM" };
     juce::Label   bpmValue;
     juce::TextButton bpmMinus { "−" };
@@ -126,12 +141,19 @@ private:
     bool suppressModelCallback = false;
 
     int readyParts = 0;
-    InstrumentType focusedLane = InstrumentType::Chords;
+    InstrumentType focusedLane = InstrumentType::Melody;
     juce::String lastSoundPicksGenre; // last genre announced as "Sound picks" in chat
+    std::array<bool, (size_t) InstrumentType::NumTypes> laneSolo {};
+    std::array<bool, (size_t) InstrumentType::NumTypes> baseMute {}; // user mute before solo overlay
+    bool generatingUi = false;
+    juce::uint32 generatingClearAtMs = 0;
+    juce::String lastRunSeed;
+    juce::String lastRunMs;
 
     MidiRollView midiRoll;
     ChordDashboardView chordDashboard;
     ChatPanel chatPanel;
+    TrackDetailPanel trackDetail;
     std::array<std::unique_ptr<InstrumentPanel>, (size_t) InstrumentType::NumTypes> panels;
     std::array<std::unique_ptr<InstrumentLane>, (size_t) InstrumentType::NumTypes> lanes;
     DrumKitPanel drumKitPanel;

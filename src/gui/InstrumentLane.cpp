@@ -1,5 +1,6 @@
 #include "InstrumentLane.h"
 #include "CustomLookAndFeel.h"
+#include <cmath>
 
 namespace aimidi
 {
@@ -7,68 +8,85 @@ namespace aimidi
 InstrumentLane::InstrumentLane (InstrumentType t) : type (t)
 {
     title.setText (toString (t), juce::dontSendNotification);
-    title.setFont (CustomLookAndFeel::font (12.0f, juce::Font::bold));
+    title.setFont (CustomLookAndFeel::font (12.5f, juce::Font::bold));
     title.setColour (juce::Label::textColourId, CustomLookAndFeel::txt1);
     title.setInterceptsMouseClicks (false, false);
     addAndMakeVisible (title);
 
-    generateBtn.setComponentID ("ghost");
-    generateBtn.setTooltip ("Regenerate this part");
+    auto styleIcon = [] (juce::TextButton& b, const juce::String& tip)
+    {
+        b.setComponentID ("ghost");
+        b.setTooltip (tip);
+    };
+
+    styleIcon (generateBtn, "Regenerate this part");
     generateBtn.onClick = [this]
     {
         if (onGenerate) onGenerate();
     };
     addAndMakeVisible (generateBtn);
 
-    lockBtn.setComponentID ("ghost");
-    lockBtn.setClickingTogglesState (true);
-    lockBtn.setTooltip ("Lock — skip on Generate all");
-    lockBtn.onClick = [this]
+    styleIcon (diceBtn, "Randomize / vary");
+    diceBtn.onClick = [this]
     {
-        if (onLockChanged) onLockChanged (lockBtn.getToggleState());
+        if (onRandomize) onRandomize();
+        else if (onGenerate) onGenerate();
     };
-    addAndMakeVisible (lockBtn);
+    addAndMakeVisible (diceBtn);
 
     muteBtn.setComponentID ("ghost");
     muteBtn.setClickingTogglesState (true);
-    muteBtn.setTooltip ("Mute in preview / MIDI out");
+    muteBtn.setTooltip ("Mute");
     muteBtn.onClick = [this]
     {
+        // Spec: M toggled = accent fill / white text
+        muteBtn.setComponentID (muteBtn.getToggleState() ? "primary" : "ghost");
         if (onMuteChanged) onMuteChanged (muteBtn.getToggleState());
+        repaint();
     };
     addAndMakeVisible (muteBtn);
 
-    dragBtn.setComponentID ("ghost");
-    dragBtn.setTooltip ("Drag MIDI into FL Studio");
-    dragBtn.getFileToDrag = [this] () -> juce::File
+    soloBtn.setComponentID ("ghost");
+    soloBtn.setClickingTogglesState (true);
+    soloBtn.setTooltip ("Solo");
+    soloBtn.onClick = [this]
     {
-        if (! hasContent || ! requestMidiFile) return {};
-        return requestMidiFile();
+        // Spec: S toggled = #FF9F0A fill / dark text (painted in paint())
+        soloBtn.setButtonText (soloBtn.getToggleState() ? "" : "S");
+        if (onSoloChanged) onSoloChanged (soloBtn.getToggleState());
+        repaint();
     };
-    addAndMakeVisible (dragBtn);
+    addAndMakeVisible (soloBtn);
 }
 
 void InstrumentLane::setSelected (bool shouldSelect)
 {
     selected = shouldSelect;
+    title.setColour (juce::Label::textColourId,
+                     selected ? CustomLookAndFeel::txt1
+                              : (hasContent ? juce::Colour (0xffD1D1D6) : CustomLookAndFeel::txt2));
     repaint();
 }
 
 void InstrumentLane::setHasContent (bool has)
 {
     hasContent = has;
-    dragBtn.setEnabled (has);
+    title.setColour (juce::Label::textColourId,
+                     selected ? CustomLookAndFeel::txt1
+                              : (hasContent ? juce::Colour (0xffD1D1D6) : CustomLookAndFeel::txt2));
     repaint();
-}
-
-void InstrumentLane::setLocked (bool locked)
-{
-    lockBtn.setToggleState (locked, juce::dontSendNotification);
 }
 
 void InstrumentLane::setMuted (bool muted)
 {
     muteBtn.setToggleState (muted, juce::dontSendNotification);
+    muteBtn.setComponentID (muted ? "primary" : "ghost");
+}
+
+void InstrumentLane::setSoloed (bool soloed)
+{
+    soloBtn.setToggleState (soloed, juce::dontSendNotification);
+    soloBtn.setButtonText (soloed ? "" : "S");
 }
 
 void InstrumentLane::setThumbnailNotes (std::vector<std::pair<double, double>> notes, double beats)
@@ -78,65 +96,96 @@ void InstrumentLane::setThumbnailNotes (std::vector<std::pair<double, double>> n
     repaint();
 }
 
-void InstrumentLane::mouseDown (const juce::MouseEvent&)
+void InstrumentLane::mouseDown (const juce::MouseEvent& e)
 {
+    if (e.originalComponent == &generateBtn || e.originalComponent == &diceBtn
+        || e.originalComponent == &muteBtn || e.originalComponent == &soloBtn)
+        return;
     if (onSelect) onSelect();
 }
 
 void InstrumentLane::paint (juce::Graphics& g)
 {
     auto bounds = getLocalBounds().toFloat().reduced (0.5f);
-    g.setColour (selected ? CustomLookAndFeel::bg3 : CustomLookAndFeel::bg2);
-    g.fillRoundedRectangle (bounds, CustomLookAndFeel::radiusSm);
-    g.setColour (selected ? CustomLookAndFeel::line2 : CustomLookAndFeel::line);
-    g.drawRoundedRectangle (bounds, CustomLookAndFeel::radiusSm, 1.0f);
-
     if (selected)
     {
-        g.setColour (CustomLookAndFeel::txt1);
-        g.fillRoundedRectangle (bounds.removeFromLeft (3.0f).reduced (0.0f, 6.0f), 1.5f);
+        g.setColour (juce::Colour (0x14ffffff)); // rgba(255,255,255,.08)
+        g.fillRoundedRectangle (bounds, 9.0f);
+        g.setColour (juce::Colours::white.withAlpha (0.08f));
+        g.drawHorizontalLine ((int) bounds.getY() + 1, bounds.getX() + 6.0f, bounds.getRight() - 6.0f);
     }
 
-    // Status dot
-    auto dotArea = getLocalBounds().reduced (8, 0).removeFromLeft (14).withSizeKeepingCentre (7, 7);
-    g.setColour (hasContent ? CustomLookAndFeel::success : CustomLookAndFeel::txt3);
+    const auto col = CustomLookAndFeel::colourForInstrument ((int) type);
+
+    auto dotArea = getLocalBounds().reduced (10, 0).removeFromLeft (10).withSizeKeepingCentre (8, 8);
+    g.setColour (hasContent ? col : juce::Colour (0x24ffffff));
     g.fillEllipse (dotArea.toFloat());
-
-    // Mini-roll thumbnail strip
-    auto thumb = getLocalBounds().reduced (10, 8);
-    thumb.removeFromLeft (78);
-    thumb.removeFromRight (118);
-    if (thumb.getWidth() > 20 && thumb.getHeight() > 8)
+    if (hasContent)
     {
-        g.setColour (CustomLookAndFeel::bg0);
-        g.fillRoundedRectangle (thumb.toFloat(), 4.0f);
-        g.setColour (CustomLookAndFeel::line);
-        g.drawRoundedRectangle (thumb.toFloat(), 4.0f, 1.0f);
+        g.setColour (col.withAlpha (0.55f));
+        g.drawEllipse (dotArea.toFloat().expanded (1.5f), 1.0f);
+    }
 
-        const auto col = CustomLookAndFeel::colourForInstrument ((int) type);
-        for (auto& n : thumbNotes)
+    // Seeded-style mini bars (32 × 3px) in sunken well
+    auto thumb = getLocalBounds().reduced (8, 11);
+    thumb.removeFromLeft (78);
+    thumb.removeFromRight (104);
+    if (thumb.getWidth() > 24 && thumb.getHeight() > 8)
+    {
+        g.setColour (juce::Colours::black.withAlpha (0.30f));
+        g.fillRoundedRectangle (thumb.toFloat(), 6.0f);
+
+        if (hasContent)
         {
-            const float x = thumb.getX() + (float) (n.first / loopBeats) * (float) thumb.getWidth();
-            const float w = juce::jmax (2.0f, (float) (n.second / loopBeats) * (float) thumb.getWidth());
-            g.setColour (col.withAlpha (0.85f));
-            g.fillRoundedRectangle (x, (float) thumb.getY() + 3.0f, w, (float) thumb.getHeight() - 6.0f, 2.0f);
+            const int bars = 32;
+            const float cell = ((float) thumb.getWidth() - 10.0f) / (float) bars;
+            for (int j = 0; j < bars; ++j)
+            {
+                // Spec: seeded sin heights 4..19px
+                const double x = std::sin ((int) type * 127.1 + j * 311.7) * 43758.5;
+                const double frac = x - std::floor (x);
+                float h = 4.0f + (float) frac * 15.0f;
+                if (! thumbNotes.empty())
+                {
+                    const double t0 = (double) j / (double) bars * loopBeats;
+                    const double t1 = (double) (j + 1) / (double) bars * loopBeats;
+                    bool hit = false;
+                    for (auto& n : thumbNotes)
+                        if (n.first < t1 && n.first + n.second > t0) { hit = true; break; }
+                    if (! hit) h *= 0.35f;
+                }
+                const float bx = (float) thumb.getX() + 5.0f + (float) j * cell;
+                g.setColour (col);
+                g.fillRoundedRectangle (bx, (float) thumb.getCentreY() - h * 0.5f, 3.0f, h, 2.0f);
+            }
         }
+    }
+
+    // Solo active paint overlay (orange chip)
+    if (soloBtn.getToggleState())
+    {
+        auto s = soloBtn.getBounds().toFloat();
+        g.setColour (juce::Colour (0xffFF9F0A));
+        g.fillRoundedRectangle (s, 6.0f);
+        g.setColour (juce::Colour (0xff1A1A1C));
+        g.setFont (CustomLookAndFeel::font (10.0f, juce::Font::bold));
+        g.drawText ("S", soloBtn.getBounds(), juce::Justification::centred, false);
     }
 }
 
 void InstrumentLane::resized()
 {
-    auto r = getLocalBounds().reduced (6, 6);
-    r.removeFromLeft (14); // status dot
-    title.setBounds (r.removeFromLeft (64));
+    auto r = getLocalBounds().reduced (8, 6);
+    r.removeFromLeft (14);
+    title.setBounds (r.removeFromLeft (62));
 
-    dragBtn.setBounds (r.removeFromRight (28));
-    r.removeFromRight (2);
-    muteBtn.setBounds (r.removeFromRight (26));
-    r.removeFromRight (2);
-    lockBtn.setBounds (r.removeFromRight (28));
-    r.removeFromRight (2);
-    generateBtn.setBounds (r.removeFromRight (28));
+    soloBtn.setBounds (r.removeFromRight (22));
+    r.removeFromRight (4);
+    muteBtn.setBounds (r.removeFromRight (22));
+    r.removeFromRight (4);
+    diceBtn.setBounds (r.removeFromRight (22));
+    r.removeFromRight (4);
+    generateBtn.setBounds (r.removeFromRight (22));
 }
 
 } // namespace aimidi

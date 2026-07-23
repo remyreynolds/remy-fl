@@ -55,7 +55,7 @@ void ChordDashboardView::paint (juce::Graphics& g)
 
     g.setFont (CustomLookAndFeel::font (11.0f));
     g.setColour (CustomLookAndFeel::txt2);
-    g.drawText ("Live harmony · follow playhead",
+    g.drawText ("Live harmony · follows playhead",
                 title, juce::Justification::centredLeft, false);
 
     r.removeFromTop (6);
@@ -94,17 +94,16 @@ void ChordDashboardView::paint (juce::Graphics& g)
             }
         }
 
-        g.setColour (CustomLookAndFeel::bg3);
-        g.fillRoundedRectangle (nowR.toFloat().reduced (1.0f), 4.0f);
-        g.setColour (CustomLookAndFeel::accent);
+        const bool hasNow = nowName.isNotEmpty() && nowName != "—";
+        g.setColour (hasNow ? CustomLookAndFeel::accent : juce::Colour (0x0affffff));
+        g.fillRoundedRectangle (nowR.toFloat().reduced (1.0f), 8.0f);
+        g.setColour (hasNow ? juce::Colours::white : CustomLookAndFeel::txt3);
         g.setFont (CustomLookAndFeel::font (11.0f, juce::Font::bold));
-        g.drawText (nowName, nowR, juce::Justification::centred, false);
+        g.drawText (nowName.isNotEmpty() ? nowName : "—", nowR, juce::Justification::centred, false);
 
         auto lane = rowR.reduced (4, 2).toFloat();
-        g.setColour (CustomLookAndFeel::bg1);
-        g.fillRoundedRectangle (lane, 4.0f);
-        g.setColour (CustomLookAndFeel::line);
-        g.drawRoundedRectangle (lane, 4.0f, 1.0f);
+        g.setColour (CustomLookAndFeel::bg0);
+        g.fillRoundedRectangle (lane, 8.0f);
 
         // Bar grid
         g.setColour (CustomLookAndFeel::line.withAlpha (0.7f));

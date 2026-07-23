@@ -1,16 +1,16 @@
 :root {
-  /* Legacy aliases → shadcn zinc tokens */
+  /* Legacy aliases → ComposerAI tokens */
   --bg: hsl(var(--background));
-  --surface: hsl(240 6% 7%);
+  --surface: #0F1015;
   --surface-2: hsl(var(--secondary));
-  --surface-3: hsl(240 4% 18%);
+  --surface-3: #1C1F2B;
   --line: hsl(var(--border));
-  --line-soft: hsl(240 4% 12%);
+  --line-soft: #1C1F2B;
   --text: hsl(var(--foreground));
   --muted: hsl(var(--muted-foreground));
-  --faint: hsl(240 5% 46%);
-  --write: hsl(var(--primary));
-  --write-hover: hsl(0 0% 90%);
+  --faint: #6B7080;
+  --write: var(--composer-coral, #FF7A66);
+  --write-hover: #E86655;
   --note: hsl(var(--muted-foreground));
   --amber: hsl(var(--chart-3));
   --danger: hsl(0 72% 51%);
@@ -64,13 +64,14 @@ kbd {
   background: none;
   border: 0;
   display: flex;
-  font: 600 12px var(--mono);
-  gap: 8px;
-  letter-spacing: .08em;
+  font: 600 18px var(--display);
+  gap: 10px;
+  letter-spacing: -0.035em;
   padding: 0;
 }
-.brand svg { color: hsl(var(--foreground)); }
-.brand em { color: var(--faint); font-style: normal; font-weight: 400; }
+.brand-mark { width: 28px; height: 28px; color: var(--composer-paper, #E9ECF5); flex: none; }
+.brand span { color: var(--composer-paper, #E9ECF5); font-weight: 600; }
+.brand em { color: var(--composer-coral, #FF7A66); font-style: normal; font-weight: 700; }
 .app-header nav { display: flex; gap: 0; justify-content: center; }
 .app-header nav .nav-tabs {
   display: inline-flex;

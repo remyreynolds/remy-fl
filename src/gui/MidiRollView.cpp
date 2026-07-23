@@ -8,12 +8,12 @@ namespace aimidi
 MidiRollView::MidiRollView()
 {
     title.setText ("Piano roll", juce::dontSendNotification);
-    title.setFont (CustomLookAndFeel::font (13.0f, juce::Font::bold));
+    title.setFont (CustomLookAndFeel::font (14.0f, juce::Font::bold));
     title.setColour (juce::Label::textColourId, CustomLookAndFeel::txt1);
     addAndMakeVisible (title);
 
     subtitle.setText ("No notes yet", juce::dontSendNotification);
-    subtitle.setFont (CustomLookAndFeel::font (11.5f));
+    subtitle.setFont (CustomLookAndFeel::font (11.0f));
     subtitle.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
     subtitle.setJustificationType (juce::Justification::centredRight);
     addAndMakeVisible (subtitle);
@@ -47,6 +47,13 @@ void MidiRollView::setPlayheadBeats (double beats)
 void MidiRollView::setFocusLabel (const juce::String& label)
 {
     title.setText (label.isNotEmpty() ? label : "Piano roll", juce::dontSendNotification);
+}
+
+void MidiRollView::setGenerating (bool busy, const juce::String& trackName)
+{
+    generating = busy;
+    generatingTrack = trackName;
+    repaint();
 }
 
 void MidiRollView::clear()
@@ -90,10 +97,11 @@ juce::Rectangle<float> MidiRollView::getNoteArea() const
 
 void MidiRollView::resized()
 {
-    auto r = getLocalBounds().reduced (12);
-    auto top = r.removeFromTop (20);
-    title.setBounds (top.removeFromLeft (90));
-    subtitle.setBounds (top);
+    auto r = getLocalBounds().reduced (16, 14);
+    auto top = r.removeFromTop (22);
+    title.setBounds (top.removeFromLeft (juce::jmin (280, top.getWidth() * 45 / 100)));
+    auto badge = top.removeFromRight (72).withSizeKeepingCentre (72, 20);
+    subtitle.setBounds (badge);
 }
 
 void MidiRollView::paint (juce::Graphics& g)
@@ -106,16 +114,16 @@ void MidiRollView::paint (juce::Graphics& g)
     auto legend = r.removeFromTop (18);
     const char* names[] = { "Mel", "Chd", "Bass", "Drm", "CMel", "Arp", "Pad" };
     int x = legend.getX();
-    g.setFont (CustomLookAndFeel::font (10.5f, juce::Font::bold));
+    g.setFont (CustomLookAndFeel::font (10.0f));
     for (int i = 0; i < 7; ++i)
     {
         auto c = CustomLookAndFeel::colourForInstrument (i);
-        g.setColour (c.withAlpha (0.70f));
-        g.fillRoundedRectangle ((float) x, (float) legend.getY() + 5.0f, 6.0f, 6.0f, 2.0f);
+        g.setColour (c);
+        g.fillEllipse ((float) x, (float) legend.getCentreY() - 3.0f, 6.0f, 6.0f);
         g.setColour (CustomLookAndFeel::txt2);
         g.drawText (names[i], x + 10, legend.getY(), 34, legend.getHeight(),
                     juce::Justification::centredLeft);
-        x += 44;
+        x += 48;
     }
 
     r.removeFromTop (6);
@@ -202,17 +210,19 @@ void MidiRollView::paint (juce::Graphics& g)
                 && playheadBeats < n.startBeats + n.lengthBeats;
 
             auto col = CustomLookAndFeel::colourForInstrument (n.colourIndex);
-            float a = n.muted ? 0.18f : (0.40f + 0.45f * n.velocity);
+            float a = n.muted ? 0.18f : (0.55f + 0.40f * n.velocity);
             if (underPlayhead && ! n.muted)
-                a = juce::jmin (1.0f, a + 0.35f);
+                a = juce::jmin (1.0f, a + 0.25f);
 
-            g.setColour (col.withAlpha (a));
-            g.fillRoundedRectangle (nx, ny, nw, nh, 2.0f);
+            juce::ColourGradient noteGrad (col.interpolatedWith (juce::Colours::white, 0.14f).withAlpha (a),
+                                           nx, ny, col.withAlpha (a), nx, ny + nh, false);
+            g.setGradientFill (noteGrad);
+            g.fillRoundedRectangle (nx, ny, nw, nh, 3.0f);
 
             if (underPlayhead && ! n.muted)
             {
-                g.setColour (CustomLookAndFeel::accent.withAlpha (0.85f));
-                g.drawRoundedRectangle (nx, ny, nw, nh, 2.0f, 1.0f);
+                g.setColour (CustomLookAndFeel::accent.withAlpha (0.90f));
+                g.drawRoundedRectangle (nx, ny, nw, nh, 3.0f, 1.2f);
             }
         }
     }
@@ -234,6 +244,50 @@ void MidiRollView::paint (juce::Graphics& g)
         const float topY = noteArea.getY();
         tip.addTriangle (px - 5.0f, topY, px + 5.0f, topY, px, topY + 7.0f);
         g.fillPath (tip);
+
+        // Accent glow on playhead (spec)
+        g.setColour (CustomLookAndFeel::accent.withAlpha (0.35f));
+        g.drawLine (px, noteArea.getY(), px, noteArea.getBottom(), 4.0f);
+        g.setColour (CustomLookAndFeel::accent);
+        g.drawLine (px, noteArea.getY(), px, noteArea.getBottom(), 1.5f);
+    }
+
+    if (generating)
+    {
+        g.setColour (juce::Colour (0xff131315).withAlpha (0.55f));
+        g.fillRoundedRectangle (roll.reduced (1.0f), CustomLookAndFeel::radiusSm - 1.0f);
+
+        // Shimmer band (1.1s loop)
+        const double ms = juce::Time::getMillisecondCounterHiRes();
+        const float phase = (float) (std::fmod (ms, 1100.0) / 1100.0);
+        const float bandX = noteArea.getX() + (phase * 2.0f - 0.5f) * noteArea.getWidth();
+        juce::ColourGradient shim (juce::Colours::transparentBlack, bandX - 80.0f, 0.0f,
+                                   CustomLookAndFeel::accent.withAlpha (0.18f), bandX, 0.0f, false);
+        shim.addColour (1.0, juce::Colours::transparentBlack);
+        g.setGradientFill (shim);
+        g.fillRect (noteArea);
+
+        auto pill = juce::Rectangle<float> (0, 0, 220.0f, 40.0f)
+                        .withCentre (noteArea.getCentre());
+        g.setColour (juce::Colour (0xe61e1e21));
+        g.fillRoundedRectangle (pill, 20.0f);
+        g.setColour (juce::Colours::white.withAlpha (0.10f));
+        g.drawRoundedRectangle (pill, 20.0f, 1.0f);
+
+        g.setColour (CustomLookAndFeel::accent);
+        const float spin = (float) (juce::Time::getMillisecondCounter() % 800) / 800.0f * juce::MathConstants<float>::twoPi;
+        juce::Path arc;
+        arc.addCentredArc (pill.getX() + 22.0f, pill.getCentreY(), 7.0f, 7.0f, 0.0f,
+                           spin, spin + 4.2f, true);
+        g.strokePath (arc, juce::PathStrokeType (2.5f, juce::PathStrokeType::curved,
+                                                 juce::PathStrokeType::rounded));
+
+        g.setColour (CustomLookAndFeel::txt1);
+        g.setFont (CustomLookAndFeel::font (12.5f, juce::Font::bold));
+        const auto name = generatingTrack.isNotEmpty() ? generatingTrack : juce::String ("track");
+        g.drawText ("Composing " + name + "…",
+                    pill.toNearestInt().withTrimmedLeft (36),
+                    juce::Justification::centredLeft, false);
     }
 }
 

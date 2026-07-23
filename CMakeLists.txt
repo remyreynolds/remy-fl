@@ -22,11 +22,11 @@ FetchContent_MakeAvailable(JUCE)
 # Plugin target
 # ---------------------------------------------------------------------------
 juce_add_plugin(AIMidiGen
-    PRODUCT_NAME            "AI MIDI Gen"
-    COMPANY_NAME            "YourStudio"
-    BUNDLE_ID               "com.yourstudio.aimidigen"
-    PLUGIN_MANUFACTURER_CODE Ymgn
-    PLUGIN_CODE             Aimg
+    PRODUCT_NAME            "ComposerAI"
+    COMPANY_NAME            "ComposerAI"
+    BUNDLE_ID               "com.composerai.app"
+    PLUGIN_MANUFACTURER_CODE CmAI
+    PLUGIN_CODE             Cai1
     FORMATS                 VST3 AU Standalone
     IS_SYNTH                FALSE
     NEEDS_MIDI_INPUT        FALSE
@@ -36,6 +36,8 @@ juce_add_plugin(AIMidiGen
     COPY_PLUGIN_AFTER_BUILD TRUE
     VST3_CATEGORIES         "Instrument" "Tools"
     AU_MAIN_TYPE            "kAudioUnitType_MusicDevice"
+    ICON_BIG                "${CMAKE_SOURCE_DIR}/branding/composerai/ComposerAI.icon.png"
+    ICON_SMALL              "${CMAKE_SOURCE_DIR}/branding/composerai/ComposerAI.icon.png"
 )
 
 juce_generate_juce_header(AIMidiGen)
@@ -56,6 +58,7 @@ target_sources(AIMidiGen PRIVATE
     src/gui/ChatPanel.cpp
     src/gui/InstrumentPanel.cpp
     src/gui/InstrumentLane.cpp
+    src/gui/TrackDetailPanel.cpp
     src/gui/DrumKitPanel.cpp
     src/gui/MidiRollView.cpp
     src/gui/ChordDashboardView.cpp
@@ -95,3 +98,12 @@ target_link_libraries(MidiPatternTests PRIVATE
 )
 enable_testing()
 add_test (NAME MidiPatternTests COMMAND MidiPatternTests)
+
+# ---------------------------------------------------------------------------
+# Claude engine harness (JUCE-free): styles, critic, chat director parses
+# ---------------------------------------------------------------------------
+add_executable(EngineTests
+    tests/EngineTests.cpp
+)
+target_include_directories(EngineTests PRIVATE src src/engine)
+add_test (NAME EngineTests COMMAND EngineTests)

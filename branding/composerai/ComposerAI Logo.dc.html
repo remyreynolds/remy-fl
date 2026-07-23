@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *{ box-sizing:border-box; }
+  body{ margin:0; }
+</style>
+</helmet>
+
+<div style="--accent: {{ accent }}; --wmw: {{ wmWeight }}; font-family:'Space Grotesk',system-ui,sans-serif; background:#0B0C10; color:#E9ECF5; min-height:100vh; padding:72px 64px 96px; display:flex; flex-direction:column; align-items:center; gap:40px;">
+
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="composer-mark" viewBox="0 0 100 100">
+      <rect x="14" y="22" width="13.2" height="56" rx="3.4" fill="currentColor" opacity="0.92"/>
+      <rect x="28.6" y="22" width="13.2" height="56" rx="3.4" fill="var(--accent,#8B7BFF)"/>
+      <rect x="43.2" y="22" width="13.2" height="56" rx="3.4" fill="currentColor" opacity="0.92"/>
+      <rect x="57.8" y="22" width="13.2" height="56" rx="3.4" fill="currentColor" opacity="0.92"/>
+      <rect x="72.4" y="22" width="13.2" height="56" rx="3.4" fill="var(--accent,#8B7BFF)"/>
+      <rect x="24.2" y="22" width="7.4" height="32" rx="2.8" fill="var(--key-mask,#0B0C10)"/>
+      <rect x="38.8" y="22" width="7.4" height="32" rx="2.8" fill="var(--key-mask,#0B0C10)"/>
+      <rect x="53.4" y="22" width="7.4" height="32" rx="2.8" fill="var(--accent,#8B7BFF)"/>
+      <rect x="68" y="22" width="7.4" height="32" rx="2.8" fill="var(--key-mask,#0B0C10)"/>
+    </symbol>
+  </svg>
+
+  <!-- HERO -->
+  <div style="width:100%; max-width:960px; background:linear-gradient(160deg,#14161D,#0F1015); border:1px solid #23262F; border-radius:24px; padding:72px 64px; display:flex; align-items:center; justify-content:center; gap:20px;">
+    <svg viewBox="0 0 100 100" style="width:104px; height:104px; color:#E9ECF5; flex:none;"><use href="#composer-mark"/></svg>
+    <div style="display:flex; align-items:baseline; font-size:76px; letter-spacing:-0.035em; line-height:1;">
+      <span style="font-weight:var(--wmw,600);">Composer</span><span style="color:var(--accent,#8B7BFF); font-weight:700;">AI</span>
+    </div>
+  </div>
+
+  <!-- LIGHT / DARK -->
+  <div style="width:100%; max-width:960px; display:grid; grid-template-columns:1fr 1fr; gap:24px;">
+    <div style="background:#0F1015; border:1px solid #23262F; border-radius:20px; padding:52px 40px; display:flex; flex-direction:column; align-items:center; gap:24px;">
+      <div style="display:flex; align-items:center; gap:11px;">
+        <svg viewBox="0 0 100 100" style="width:56px; height:56px; color:#E9ECF5;"><use href="#composer-mark"/></svg>
+        <div style="display:flex; align-items:baseline; font-size:40px; letter-spacing:-0.035em; line-height:1;">
+          <span style="font-weight:var(--wmw,600);">Composer</span><span style="color:var(--accent,#8B7BFF); font-weight:700;">AI</span>
+        </div>
+      </div>
+      <span style="font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:#6B7080;">On dark</span>
+    </div>
+    <div style="background:#F4F5F8; border:1px solid #E4E6EC; border-radius:20px; padding:52px 40px; display:flex; flex-direction:column; align-items:center; gap:24px;">
+      <div style="display:flex; align-items:center; gap:11px;">
+        <svg viewBox="0 0 100 100" style="width:56px; height:56px; color:#14161D; --key-mask:#F4F5F8;"><use href="#composer-mark"/></svg>
+        <div style="display:flex; align-items:baseline; font-size:40px; letter-spacing:-0.035em; line-height:1; color:#14161D;">
+          <span style="font-weight:var(--wmw,600);">Composer</span><span style="color:var(--accent,#8B7BFF); font-weight:700;">AI</span>
+        </div>
+      </div>
+      <span style="font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:#9AA0AE;">On light</span>
+    </div>
+  </div>
+
+  <!-- STACKED + ICON -->
+  <div style="width:100%; max-width:960px; display:grid; grid-template-columns:1.15fr 1fr; gap:24px;">
+    <div style="background:#0F1015; border:1px solid #23262F; border-radius:20px; padding:56px 40px; display:flex; flex-direction:column; align-items:center; gap:22px;">
+      <svg viewBox="0 0 100 100" style="width:80px; height:80px; color:#E9ECF5;"><use href="#composer-mark"/></svg>
+      <div style="display:flex; align-items:baseline; font-size:40px; letter-spacing:-0.035em; line-height:1;">
+        <span style="font-weight:var(--wmw,600);">Composer</span><span style="color:var(--accent,#8B7BFF); font-weight:700;">AI</span>
+      </div>
+      <span style="font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:#6B7080;">Stacked lockup</span>
+    </div>
+    <div style="background:#0F1015; border:1px solid #23262F; border-radius:20px; padding:44px 40px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:26px;">
+      <div style="width:104px; height:104px; border-radius:24px; background:radial-gradient(120% 120% at 30% 20%,#1C1F2B,#101218); border:1px solid #2A2E3A; display:flex; align-items:center; justify-content:center;">
+        <svg viewBox="0 0 100 100" style="width:66px; height:66px; color:#E9ECF5;"><use href="#composer-mark"/></svg>
+      </div>
+      <span style="font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:#6B7080;">App icon</span>
+    </div>
+  </div>
+
+  <!-- FAVICON SCALES + SWATCHES -->
+  <div style="width:100%; max-width:960px; display:grid; grid-template-columns:1.15fr 1fr; gap:24px;">
+    <div style="background:#0F1015; border:1px solid #23262F; border-radius:20px; padding:40px; display:flex; flex-direction:column; gap:26px;">
+      <span style="font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:#6B7080;">Favicon / small sizes</span>
+      <div style="display:flex; align-items:flex-end; gap:34px;">
+        <div style="display:flex; flex-direction:column; align-items:center; gap:10px;"><svg viewBox="0 0 100 100" style="width:48px; height:48px; color:#E9ECF5;"><use href="#composer-mark"/></svg><span style="font-family:'JetBrains Mono',monospace; font-size:10px; color:#5A5F6E;">48</span></div>
+        <div style="display:flex; flex-direction:column; align-items:center; gap:10px;"><svg viewBox="0 0 100 100" style="width:32px; height:32px; color:#E9ECF5;"><use href="#composer-mark"/></svg><span style="font-family:'JetBrains Mono',monospace; font-size:10px; color:#5A5F6E;">32</span></div>
+        <div style="display:flex; flex-direction:column; align-items:center; gap:10px;"><svg viewBox="0 0 100 100" style="width:24px; height:24px; color:#E9ECF5;"><use href="#composer-mark"/></svg><span style="font-family:'JetBrains Mono',monospace; font-size:10px; color:#5A5F6E;">24</span></div>
+        <div style="display:flex; flex-direction:column; align-items:center; gap:10px;"><svg viewBox="0 0 100 100" style="width:16px; height:16px; color:#E9ECF5;"><use href="#composer-mark"/></svg><span style="font-family:'JetBrains Mono',monospace; font-size:10px; color:#5A5F6E;">16</span></div>
+      </div>
+    </div>
+    <div style="background:#0F1015; border:1px solid #23262F; border-radius:20px; padding:40px; display:flex; flex-direction:column; gap:20px;">
+      <span style="font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:#6B7080;">Palette</span>
+      <div style="display:flex; gap:14px;">
+        <div style="display:flex; flex-direction:column; gap:8px;"><div style="width:56px; height:56px; border-radius:12px; background:var(--accent,#8B7BFF);"></div><span style="font-family:'JetBrains Mono',monospace; font-size:10px; color:#5A5F6E;">Accent</span></div>
+        <div style="display:flex; flex-direction:column; gap:8px;"><div style="width:56px; height:56px; border-radius:12px; background:#0B0C10; border:1px solid #23262F;"></div><span style="font-family:'JetBrains Mono',monospace; font-size:10px; color:#5A5F6E;">Ink</span></div>
+        <div style="display:flex; flex-direction:column; gap:8px;"><div style="width:56px; height:56px; border-radius:12px; background:#F4F5F8;"></div><span style="font-family:'JetBrains Mono',monospace; font-size:10px; color:#5A5F6E;">Paper</span></div>
+      </div>
+      <span style="font-size:13px; color:#8A90A0; line-height:1.5;">Space Grotesk · geometric sans for a modern, technical feel.</span>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;},&quot;colorway&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Violet&quot;,&quot;Cyan&quot;,&quot;Emerald&quot;,&quot;Coral&quot;,&quot;Mono&quot;],&quot;default&quot;:&quot;Coral&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Brand&quot;},&quot;accent&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#ff5757&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Brand&quot;},&quot;wordmarkWeight&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:600,&quot;min&quot;:400,&quot;max&quot;:700,&quot;step&quot;:100,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Wordmark&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const ways = {
+      Violet:  '#8B7BFF',
+      Cyan:    '#54E6FF',
+      Emerald: '#4BE3B0',
+      Coral:   '#FF7A66',
+      Mono:    '#E9ECF5'
+    };
+    const cw = this.props.colorway || 'Violet';
+    let a = this.props.accent;
+    if (Array.isArray(a) || typeof a !== 'string') a = null;
+    const accent = a || ways[cw] || ways.Violet;
+    return { accent, wmWeight: this.props.wordmarkWeight ?? 600 };
+  }
+}
+</script>
+</body>
+</html>

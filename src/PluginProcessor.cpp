@@ -1054,6 +1054,7 @@ juce::String AIMidiGenProcessor::loadDna (const juce::File& midiFile)
 
 void AIMidiGenProcessor::rebuildDrumMasterPart()
 {
+    const juce::ScopedLock sl (processLock);
     auto& master = parts[(size_t) InstrumentType::Drums];
     master.type = InstrumentType::Drums;
     master.notes.clear();
@@ -1071,6 +1072,7 @@ void AIMidiGenProcessor::rebuildDrumMasterPart()
 //==============================================================================
 void AIMidiGenProcessor::rebuildPreviewSequences()
 {
+    const juce::ScopedLock sl (processLock);
     for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
         previewSeqs[(size_t) t] = MidiGenerator::toSequence (parts[(size_t) t],
                                                              projectParams.bpm);
@@ -1152,6 +1154,7 @@ void AIMidiGenProcessor::togglePreview (bool shouldPlay)
 void AIMidiGenProcessor::collectMidiForPpqWindow (juce::MidiBuffer& dest, int numSamples,
                                                   double startPpqInLoop, double ppqPerSample)
 {
+    const juce::ScopedLock sl (processLock);
     const double ticksPerQ = MidiGenerator::ticksPerQuarter;
     const double loopLenQ  = projectParams.bars * 4.0;
 

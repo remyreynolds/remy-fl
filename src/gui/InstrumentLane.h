@@ -2,13 +2,12 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../engine/MusicInstructions.h"
-#include "FileDragButton.h"
 #include <functional>
 #include <vector>
 
 namespace aimidi
 {
-/** Slim selectable instrument lane for the Generate left rail (GAMEPLAN stack). */
+/** VST v4 track row — select / mini bars / regen · dice · M · S. */
 class InstrumentLane : public juce::Component
 {
 public:
@@ -16,36 +15,35 @@ public:
 
     std::function<void()> onSelect;
     std::function<void()> onGenerate;
-    std::function<void (bool)> onLockChanged;
+    std::function<void()> onRandomize;
     std::function<void (bool)> onMuteChanged;
-    std::function<juce::File()> requestMidiFile;
+    std::function<void (bool)> onSoloChanged;
 
     InstrumentType getType() const { return type; }
     void setSelected (bool shouldSelect);
     void setHasContent (bool has);
-    void setLocked (bool locked);
     void setMuted (bool muted);
-    /** Mini-roll thumbnail notes (beats within loop). */
+    void setSoloed (bool soloed);
     void setThumbnailNotes (std::vector<std::pair<double, double>> notes, double loopBeats);
 
     void paint (juce::Graphics&) override;
     void resized() override;
     void mouseDown (const juce::MouseEvent&) override;
 
-    static constexpr int kHeight = 44;
+    static constexpr int kHeight = 46;
 
 private:
     InstrumentType type;
     juce::Label title;
     juce::TextButton generateBtn { "↻" };
-    juce::TextButton lockBtn { "🔒" };
+    juce::TextButton diceBtn { "⚄" };
     juce::TextButton muteBtn { "M" };
-    FileDragButton dragBtn { "⇄" };
+    juce::TextButton soloBtn { "S" };
 
     bool selected = false;
     bool hasContent = false;
     double loopBeats = 16.0;
-    std::vector<std::pair<double, double>> thumbNotes; // start, length
+    std::vector<std::pair<double, double>> thumbNotes;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (InstrumentLane)
 };

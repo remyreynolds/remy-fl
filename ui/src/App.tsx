@@ -1,4 +1,4 @@
-import { Brain, CircleHelp, Disc3, History, Library, MessageSquare, Radio, Sparkles } from 'lucide-react'
+import { Brain, CircleHelp, Disc3, History, Library, MessageSquare, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { relayApi, RelayError } from './api'
@@ -186,11 +186,22 @@ function App() {
       <div className="small-screen-note">
         <Disc3 size={28} />
         <h1>Open on your studio machine</h1>
-        <p>MIDI Agent is designed for a desktop workspace at least 1100px wide.</p>
+        <p>ComposerAI is designed for a desktop workspace at least 1100px wide.</p>
       </div>
       <header className="app-header">
-        <button className="brand" type="button" onClick={() => setSurface('generate')}>
-          <Radio size={17} /><span>MIDI</span><em>AGENT</em>
+        <button className="brand" type="button" onClick={() => setSurface('generate')} aria-label="ComposerAI">
+          <svg className="brand-mark" viewBox="0 0 100 100" aria-hidden="true">
+            <rect x="14" y="22" width="13.2" height="56" rx="3.4" fill="currentColor" opacity="0.92" />
+            <rect x="28.6" y="22" width="13.2" height="56" rx="3.4" fill="var(--composer-coral)" />
+            <rect x="43.2" y="22" width="13.2" height="56" rx="3.4" fill="currentColor" opacity="0.92" />
+            <rect x="57.8" y="22" width="13.2" height="56" rx="3.4" fill="currentColor" opacity="0.92" />
+            <rect x="72.4" y="22" width="13.2" height="56" rx="3.4" fill="var(--composer-coral)" />
+            <rect x="24.2" y="22" width="7.4" height="32" rx="2.8" fill="var(--composer-ink)" />
+            <rect x="38.8" y="22" width="7.4" height="32" rx="2.8" fill="var(--composer-ink)" />
+            <rect x="53.4" y="22" width="7.4" height="32" rx="2.8" fill="var(--composer-coral)" />
+            <rect x="68" y="22" width="7.4" height="32" rx="2.8" fill="var(--composer-ink)" />
+          </svg>
+          <span>Composer</span><em>AI</em>
         </button>
         <nav aria-label="Main surfaces">
           <div className="nav-tabs" role="tablist">
