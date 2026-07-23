@@ -67,27 +67,32 @@ cmake --build build --config Release -j "$CORES"
 
 # ---------------------------------------------------------------- 5. install
 # COPY_PLUGIN_AFTER_BUILD already copies to the user plugin folders; verify.
-VST3_USER="$HOME/Library/Audio/Plug-Ins/VST3/AI MIDI Gen.vst3"
-AU_USER="$HOME/Library/Audio/Plug-Ins/Components/AI MIDI Gen.component"
+# (Product name is "ComposerAI" — set in CMakeLists.txt PRODUCT_NAME.)
+VST3_USER="$HOME/Library/Audio/Plug-Ins/VST3/ComposerAI.vst3"
+AU_USER="$HOME/Library/Audio/Plug-Ins/Components/ComposerAI.component"
 ART="build/AIMidiGen_artefacts/Release"
 
-if [ ! -d "$VST3_USER" ] && [ -d "$ART/VST3/AI MIDI Gen.vst3" ]; then
+if [ ! -d "$VST3_USER" ] && [ -d "$ART/VST3/ComposerAI.vst3" ]; then
   mkdir -p "$(dirname "$VST3_USER")"
-  cp -R "$ART/VST3/AI MIDI Gen.vst3" "$VST3_USER"
+  cp -R "$ART/VST3/ComposerAI.vst3" "$VST3_USER"
 fi
-if [ ! -d "$AU_USER" ] && [ -d "$ART/AU/AI MIDI Gen.component" ]; then
+if [ ! -d "$AU_USER" ] && [ -d "$ART/AU/ComposerAI.component" ]; then
   mkdir -p "$(dirname "$AU_USER")"
-  cp -R "$ART/AU/AI MIDI Gen.component" "$AU_USER"
+  cp -R "$ART/AU/ComposerAI.component" "$AU_USER"
 fi
+
+# Old-name leftovers from earlier builds confuse DAW scans — remove them.
+rm -rf "$HOME/Library/Audio/Plug-Ins/VST3/AI MIDI Gen.vst3" \
+       "$HOME/Library/Audio/Plug-Ins/Components/AI MIDI Gen.component" 2>/dev/null || true
 
 [ -d "$VST3_USER" ] || fail "Build finished but the VST3 wasn't found — send me the output above."
 
-say "DONE! 🎛  AI MIDI Gen is installed."
+say "DONE! 🎛  ComposerAI is installed."
 cat << 'NEXT'
 
   Open it in FL Studio:
     1. FL Studio → Options → Manage plugins → click "Find plugins"
-    2. Wait for the scan — "AI MIDI Gen" appears under Installed
+    2. Wait for the scan — "ComposerAI" appears under Installed
     3. Add it to a channel, pick a Style (Tech House, Afro House, UK Garage…)
        and hit Generate All
     4. Drag any part straight into the Playlist / Piano roll
@@ -97,6 +102,6 @@ cat << 'NEXT'
     Without a key it still generates using the built-in style engine.
 
   Standalone app (test without FL Studio):
-    ~/ai-midi-gen/build/AIMidiGen_artefacts/Release/Standalone/AI MIDI Gen.app
+    ~/ai-midi-gen/build/AIMidiGen_artefacts/Release/Standalone/ComposerAI.app
 
 NEXT
