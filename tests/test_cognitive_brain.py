@@ -64,10 +64,16 @@ def plan() -> GenerationPlan:
 
 
 def test_memory_schema_and_seed_counts(memory: CognitiveMemory):
-    assert memory.fingerprint_count() == 20
+    # Derive expected counts from the seed files so the test stays valid as
+    # the knowledge base grows (hardcoded counts went stale before).
+    from app.memory import _read_seed
+
+    assert memory.fingerprint_count() == len(_read_seed("fingerprints.json"))
     assert len(memory.moods()) >= 20
     with memory.connect() as db:
-        assert db.execute("SELECT COUNT(*) FROM genre_cards").fetchone()[0] == 8
+        assert db.execute("SELECT COUNT(*) FROM genre_cards").fetchone()[0] == len(
+            _read_seed("genre_cards.json")
+        )
         tables = {
             row[0]
             for row in db.execute(

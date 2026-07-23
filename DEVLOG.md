@@ -1,6 +1,58 @@
 # AI MIDI Gen — Development Log
 
-## 2026-07-22 — Fix repeated chords and connect generation to Brain
+## 2026-07-23 — Deep audit: full Linux CI build, validator repairs, 39 findings fixed
+
+### What ran
+- **Full plugin build now works on the Linux dev box** (previously mac-only):
+  JUCE via FetchContent, cmake+ninja from a pip venv, X11/ALSA/freetype/curl
+  dev headers unpacked root-free into `/tmp/juce-sysroot`. VST3
+  (`ComposerAI.so`) + Standalone link end-to-end. New CMake option
+  `AIMIDIGEN_COPY_PLUGIN=OFF` skips the copy-to-user-plugin-folder step where
+  that folder isn't writable (build servers).
+- **New property-test target `GeneratorAuditTests`** (tests/GeneratorAuditTests.cpp):
+  every style × 3 seeds × 3 keys/scales × 4/8 bars — asserts in-key pitches,
+  notes inside the loop, no zero-length notes, velocities in (0,1], no
+  same-pitch overlaps (stuck notes), bass below melody, real 3+-note chords,
+  kick/hat presence, and seed determinism. 144 parts audited per run.
+- Python brain suite: 51/51 green (fixed a stale seed-count assertion in
+  `tests/test_cognitive_brain.py` — now derives expected counts from the seed
+  JSON files instead of hardcoding).
+
+### Engine bugs the audit caught (fixed in `MidiGenerator::validate`)
+1. Pitch snapped to scale **before** clamping to 0–127, so extreme pitches
+   could clamp back out of key. Now clamp → snap → octave-fold.
+2. Zero/negative note lengths were never repaired. Now floored to 1/16.
+3. Notes starting past the loop end survived; tails could spill past the loop.
+   Now dropped/clamped, including after swing/humanize shifts.
+4. Same-pitch duplicate hits at the same instant (drum ghost layers) survived
+   de-overlap with a length floor that guaranteed continued overlap — the
+   classic stuck-note bug. Now deduped (louder hit kept) and the de-overlap
+   shortening can no longer re-overlap.
+
+### Audit findings fixed across AI + GUI layers
+- AI layer (18 findings): use-after-free risks in detached-thread/async
+  lambdas (AIClient + processor completion callbacks), notes past loop end in
+  Claude JSON accepted unclamped, multi-lane export dropping lanes, duplicate
+  master-prompt injection (token waste), API key not trimmed, no 429 retry,
+  master-system-prompt.md clobbered on startup, missing project context on
+  regenerateFromAI, missing temperature on the pattern path.
+- GUI layer (21 findings): stale preview/mute/lock state on editor reopen and
+  after undo, dead controls (TrackDetail midi combo, discarded Export),
+  lane-generate buttons bypassing Claude, sticky "Composing…" UI, failures
+  invisible outside the Chat tab, chat auto-scroll fighting the user, fake
+  "0.8 s" telemetry, hidden BPM minus button, unusable 28px volume slider,
+  fake macOS traffic lights, space-bar stealing focus from controls.
+- Companion UI (ui/): vitest config was missing the `@` path alias that
+  vite.config.ts had, so `App.test.tsx` could not resolve imports; also fixed
+  a stale "relay connected" assertion (badge now reads "connected").
+  UI suite: 3/3 files, 8/8 tests green.
+
+### Verification after the fix round
+Full `ninja` rebuild clean; `MidiPatternTests` (49 assertions),
+`EngineTests`, `GeneratorAuditTests` (144 parts, 0 failures), pytest 51/51,
+and the React vitest suite all pass.
+
+
 
 ### Original cause
 `SongPlan.h` built harmony from a single fixed `findStyle(p.genre).progression`

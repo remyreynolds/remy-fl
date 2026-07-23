@@ -47,10 +47,14 @@ public:
 
     /** Pick the most relevant chunks for a style/theory query.
         forGeneration adds "how to sound good / groove / loop" bias keywords —
-        only wanted on the MIDI-generation path, not plain conversation. */
+        only wanted on the MIDI-generation path, not plain conversation.
+        includeMasterDoc injects the master Brain doc first; pass false when
+        the caller already puts the master prompt into the system prompt, so
+        it is not sent twice per request. */
     RetrievalResult retrieveForQuery (const juce::String& query,
                                       int maxChars = 14000,
-                                      bool forGeneration = false) const;
+                                      bool forGeneration = false,
+                                      bool includeMasterDoc = true) const;
 
     /** Convenience: context string only. */
     juce::String buildContextForQuery (const juce::String& query,

@@ -33,6 +33,8 @@ public:
 
     void setPieceHasContent (DrumPiece piece, bool has);
     void setPieceVolume (DrumPiece piece, float gain01);
+    void setPieceMuted (DrumPiece piece, bool muted);
+    void setPieceLocked (DrumPiece piece, bool locked);
     void setSampleOptions (DrumPiece piece, const std::vector<const SampleEntry*>& options,
                            const juce::String& selectedId);
 

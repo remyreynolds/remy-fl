@@ -24,16 +24,8 @@ TrackDetailPanel::TrackDetailPanel()
         l.setColour (juce::Label::textColourId, CustomLookAndFeel::txt3);
         l.setInterceptsMouseClicks (false, false);
     };
-    styleFieldLabel (midiLabel);
     styleFieldLabel (synthLabel);
-    addAndMakeVisible (midiLabel);
     addAndMakeVisible (synthLabel);
-
-    midiCombo.addItem ("AI / Generate", 1);
-    midiCombo.addItem ("Manual", 2);
-    midiCombo.addItem ("From host", 3);
-    midiCombo.setSelectedId (1, juce::dontSendNotification);
-    addAndMakeVisible (midiCombo);
 
     synthCombo.onChange = [this]
     {
@@ -76,8 +68,7 @@ TrackDetailPanel::TrackDetailPanel()
     muteBtn.onClick = [this] { if (onMuteChanged) onMuteChanged (muteBtn.getToggleState()); };
     exportBtn.onClick = [this]
     {
-        // Export is drag-primary; click still refreshes file handle via drag button path
-        if (requestMidiFile) (void) requestMidiFile();
+        if (onExport) onExport(); // editor opens a save dialog
     };
 
     addAndMakeVisible (varyBtn);
@@ -238,10 +229,6 @@ void TrackDetailPanel::resized()
     volLabel.setBounds (knobCol);
 
     auto fields = row;
-    auto midiRow = fields.removeFromTop (juce::jmin (28, fields.getHeight()));
-    midiLabel.setBounds (midiRow.removeFromLeft (40));
-    midiCombo.setBounds (midiRow);
-    if (fields.getHeight() > 8) fields.removeFromTop (8);
     auto synthRow = fields.removeFromTop (juce::jmin (28, fields.getHeight()));
     synthLabel.setBounds (synthRow.removeFromLeft (40));
     synthCombo.setBounds (synthRow);

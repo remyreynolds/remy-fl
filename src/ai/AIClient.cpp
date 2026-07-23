@@ -37,25 +37,25 @@ AIClient::AIClient()
     if (auto env = juce::SystemStats::getEnvironmentVariable ("ANTHROPIC_API_KEY", {});
         env.isNotEmpty())
     {
-        anthropicApiKey = env;
+        anthropicApiKey = sanitizeApiKey (env);
         if (provider == Provider::Claude)
             loadedFromEnv = true;
     }
     else
     {
-        anthropicApiKey = props.getValue ("anthropicApiKey");
+        anthropicApiKey = sanitizeApiKey (props.getValue ("anthropicApiKey"));
     }
 
     if (auto env = juce::SystemStats::getEnvironmentVariable ("OPENAI_API_KEY", {});
         env.isNotEmpty())
     {
-        openAiApiKey = env;
+        openAiApiKey = sanitizeApiKey (env);
         if (provider == Provider::OpenAI)
             loadedFromEnv = true;
     }
     else
     {
-        openAiApiKey = props.getValue ("openAiApiKey");
+        openAiApiKey = sanitizeApiKey (props.getValue ("openAiApiKey"));
     }
 
     claudeModel = props.getValue ("claudeModel", "claude-sonnet-4-5");
@@ -64,6 +64,12 @@ AIClient::AIClient()
         || claudeModel == "claude-sonnet-4-6")
         claudeModel = "claude-sonnet-4-5";
     openAiModel = props.getValue ("openAiModel", "gpt-4o");
+}
+
+AIClient::~AIClient()
+{
+    // Detached workers / queued async lambdas check this before touching us.
+    alive->store (false);
 }
 
 void AIClient::setProvider (Provider p)
@@ -75,14 +81,14 @@ void AIClient::setProvider (Provider p)
         if (auto env = juce::SystemStats::getEnvironmentVariable ("ANTHROPIC_API_KEY", {});
             env.isNotEmpty())
         {
-            anthropicApiKey = env;
+            anthropicApiKey = sanitizeApiKey (env);
             loadedFromEnv = true;
         }
     }
     else if (auto env = juce::SystemStats::getEnvironmentVariable ("OPENAI_API_KEY", {});
              env.isNotEmpty())
     {
-        openAiApiKey = env;
+        openAiApiKey = sanitizeApiKey (env);
         loadedFromEnv = true;
     }
 
@@ -96,15 +102,19 @@ void AIClient::setApiKey (const juce::String& key)
     loadedFromEnv = false;
     juce::PropertiesFile props (settingsOptions());
 
+    // Trim whitespace / CR / LF before storing or using — a pasted key with
+    // trailing newlines would otherwise inject extra HTTP header lines.
+    const auto cleaned = sanitizeApiKey (key);
+
     if (provider == Provider::OpenAI)
     {
-        openAiApiKey = key;
-        props.setValue ("openAiApiKey", key);
+        openAiApiKey = cleaned;
+        props.setValue ("openAiApiKey", cleaned);
     }
     else
     {
-        anthropicApiKey = key;
-        props.setValue ("anthropicApiKey", key);
+        anthropicApiKey = cleaned;
+        props.setValue ("anthropicApiKey", cleaned);
     }
 
     props.saveIfNeeded();
@@ -262,7 +272,8 @@ Rules:
 juce::var AIClient::buildRequestBody (const juce::String& system,
                                       const juce::String& user,
                                       const juce::String& model,
-                                      int maxTokens)
+                                      int maxTokens,
+                                      double temperature)
 {
     auto* msg = new juce::DynamicObject();
     msg->setProperty ("role", "user");
@@ -276,6 +287,8 @@ juce::var AIClient::buildRequestBody (const juce::String& system,
     body->setProperty ("max_tokens", maxTokens);
     body->setProperty ("system", system);
     body->setProperty ("messages", messages);
+    if (temperature >= 0.0)
+        body->setProperty ("temperature", temperature);
     return juce::var (body);
 }
 
@@ -372,11 +385,19 @@ AIClient::Endpoint AIClient::endpointSnapshot() const
 AIClient::LlmHttpResult AIClient::postChatCompletion (const Endpoint& ep,
                                                       const juce::String& system,
                                                       const juce::String& user,
-                                                      int maxTokens)
+                                                      int maxTokens,
+                                                      double temperature)
+{
+    const auto json = ep.provider == Provider::OpenAI
+        ? juce::JSON::toString (buildOpenAiRequestBody (system, user, ep.model, maxTokens))
+        : juce::JSON::toString (buildRequestBody (system, user, ep.model, maxTokens, temperature));
+    return postLlmJson (ep, json);
+}
+
+AIClient::LlmHttpResult AIClient::postLlmJson (const Endpoint& ep, const juce::String& json)
 {
     LlmHttpResult result;
     const auto& key = ep.key;
-    const auto& mdl = ep.model;
 
     if (key.isEmpty())
     {
@@ -384,87 +405,104 @@ AIClient::LlmHttpResult AIClient::postChatCompletion (const Endpoint& ep,
         return result;
     }
 
-    juce::String json;
     juce::URL url;
     juce::String headers;
 
     if (ep.provider == Provider::OpenAI)
     {
-        json = juce::JSON::toString (buildOpenAiRequestBody (system, user, mdl, maxTokens));
         url = juce::URL ("https://api.openai.com/v1/chat/completions").withPOSTData (json);
         headers = "Authorization: Bearer " + key + "\r\n"
                   "content-type: application/json\r\n";
     }
     else
     {
-        json = juce::JSON::toString (buildRequestBody (system, user, mdl, maxTokens));
         url = juce::URL ("https://api.anthropic.com/v1/messages").withPOSTData (json);
         headers = "x-api-key: " + key + "\r\n"
                   "anthropic-version: 2023-06-01\r\n"
                   "content-type: application/json\r\n";
     }
 
-    juce::StringPairArray responseHeaders;
-    int statusCode = 0;
-    auto options = juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inPostData)
-                       .withExtraHeaders (headers)
-                       .withConnectionTimeoutMs (60000)
-                       .withResponseHeaders (&responseHeaders)
-                       .withStatusCode (&statusCode);
-
-    auto stream = url.createInputStream (options);
-    if (stream == nullptr)
+    for (int attempt = 0; attempt < 2; ++attempt)
     {
-        result.error = ep.provider == Provider::OpenAI
-                           ? "Network error: could not reach api.openai.com."
-                           : "Network error: could not reach api.anthropic.com.";
-        return result;
-    }
+        juce::StringPairArray responseHeaders;
+        int statusCode = 0;
+        auto options = juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inPostData)
+                           .withExtraHeaders (headers)
+                           .withConnectionTimeoutMs (60000)
+                           .withResponseHeaders (&responseHeaders)
+                           .withStatusCode (&statusCode);
 
-    const auto raw = stream->readEntireStreamAsString();
-    result.statusCode = statusCode;
-    if (statusCode < 200 || statusCode >= 300)
-    {
-        result.error = describeHttpError (statusCode, raw);
-        return result;
-    }
-
-    result.text = ep.provider == Provider::OpenAI
-                      ? extractOpenAiTextContent (raw)
-                      : extractTextContent (raw);
-    if (result.text.isEmpty())
-    {
-        result.error = ep.displayName + " returned an empty response.";
-        return result;
-    }
-
-    // Detect a truncated reply (hit the token cap) — a half-written MIDI
-    // JSON would otherwise surface as a confusing "could not parse" error.
-    {
-        const auto top = juce::JSON::parse (raw);
-        juce::String stopReason;
-        if (ep.provider == Provider::OpenAI)
+        auto stream = url.createInputStream (options);
+        if (stream == nullptr)
         {
-            if (auto* choices = top.getProperty ("choices", {}).getArray();
-                choices != nullptr && ! choices->isEmpty())
-                stopReason = choices->getReference (0)
-                                 .getProperty ("finish_reason", {}).toString();
-            if (stopReason == "length") stopReason = "max_tokens";
-        }
-        else
-        {
-            stopReason = top.getProperty ("stop_reason", {}).toString();
-        }
-
-        if (stopReason == "max_tokens")
-        {
-            result.error = ep.displayName + " reply was cut off at the token limit. "
-                           "Try fewer bars or fewer parts.";
+            result.error = ep.provider == Provider::OpenAI
+                               ? "Network error: could not reach api.openai.com."
+                               : "Network error: could not reach api.anthropic.com.";
             return result;
         }
+
+        const auto raw = stream->readEntireStreamAsString();
+        result.statusCode = statusCode;
+
+        // ONE retry on rate-limit / server errors, honouring Retry-After
+        // (default 2s backoff, capped so a hostile header can't stall us).
+        if (attempt == 0 && (statusCode == 429 || statusCode >= 500))
+        {
+            auto retryAfter = responseHeaders.getValue ("Retry-After", {});
+            if (retryAfter.isEmpty())
+                retryAfter = responseHeaders.getValue ("retry-after", {});
+            int waitSeconds = retryAfter.getIntValue();
+            if (waitSeconds <= 0)
+                waitSeconds = 2;
+            juce::Thread::sleep (juce::jlimit (1, 30, waitSeconds) * 1000);
+            continue;
+        }
+
+        if (statusCode < 200 || statusCode >= 300)
+        {
+            result.error = describeHttpError (statusCode, raw);
+            return result;
+        }
+
+        result.text = ep.provider == Provider::OpenAI
+                          ? extractOpenAiTextContent (raw)
+                          : extractTextContent (raw);
+        if (result.text.isEmpty())
+        {
+            result.error = ep.displayName + " returned an empty response.";
+            return result;
+        }
+
+        // Detect a truncated reply (hit the token cap) — a half-written MIDI
+        // JSON would otherwise surface as a confusing "could not parse" error.
+        {
+            const auto top = juce::JSON::parse (raw);
+            juce::String stopReason;
+            if (ep.provider == Provider::OpenAI)
+            {
+                if (auto* choices = top.getProperty ("choices", {}).getArray();
+                    choices != nullptr && ! choices->isEmpty())
+                    stopReason = choices->getReference (0)
+                                     .getProperty ("finish_reason", {}).toString();
+                if (stopReason == "length") stopReason = "max_tokens";
+            }
+            else
+            {
+                stopReason = top.getProperty ("stop_reason", {}).toString();
+            }
+
+            if (stopReason == "max_tokens")
+            {
+                result.error = ep.displayName + " reply was cut off at the token limit. "
+                               "Try fewer bars or fewer parts.";
+                return result;
+            }
+        }
+
+        result.ok = true;
+        return result;
     }
 
-    result.ok = true;
     return result;
 }
 
@@ -512,8 +550,11 @@ void AIClient::handleUserTurn (const juce::String& userPrompt,
     if (looksLikeMidiGenerateRequest (prompt))
     {
         requestMidiPattern (prompt, forcedKey,
-            [this, prompt, callback] (PatternResponse r)
+            [this, alive = alive, prompt, callback] (PatternResponse r)
             {
+                if (! alive->load())
+                    return; // AIClient destroyed while the request was in flight
+
                 if (r.ok)
                 {
                     pushHistory (true, prompt);
@@ -533,8 +574,11 @@ void AIClient::handleUserTurn (const juce::String& userPrompt,
     }
 
     sendChatMessage (prompt,
-        [this, prompt, callback] (ChatResponse r)
+        [this, alive = alive, prompt, callback] (ChatResponse r)
         {
+            if (! alive->load())
+                return; // AIClient destroyed while the request was in flight
+
             if (r.ok)
             {
                 pushHistory (true, prompt);
@@ -611,50 +655,11 @@ void AIClient::sendChatMessage (const juce::String& userPrompt, ChatCallback cal
         ChatResponse resp;
         resp.matchedDocTitles = matched;
 
-        LlmHttpResult http;
-        if (useClaudeHistory)
-        {
-            // Use the prebuilt Anthropic history body path.
-            const auto& key = ep.key;
-            const auto json = juce::JSON::toString (bodyVar);
-            juce::URL url ("https://api.anthropic.com/v1/messages");
-            url = url.withPOSTData (json);
-            juce::StringPairArray responseHeaders;
-            int statusCode = 0;
-            const juce::String headers =
-                "x-api-key: " + key + "\r\n"
-                "anthropic-version: 2023-06-01\r\n"
-                "content-type: application/json\r\n";
-            auto options = juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inPostData)
-                               .withExtraHeaders (headers)
-                               .withConnectionTimeoutMs (45000)
-                               .withResponseHeaders (&responseHeaders)
-                               .withStatusCode (&statusCode);
-            auto stream = url.createInputStream (options);
-            if (stream == nullptr)
-            {
-                resp.ok = false;
-                resp.error = "Network error: could not reach api.anthropic.com.";
-                juce::MessageManager::callAsync ([callback, resp] { callback (resp); });
-                return;
-            }
-            const auto raw = stream->readEntireStreamAsString();
-            if (statusCode < 200 || statusCode >= 300)
-            {
-                resp.ok = false;
-                resp.error = describeHttpError (statusCode, raw);
-                juce::MessageManager::callAsync ([callback, resp] { callback (resp); });
-                return;
-            }
-            http.text = extractTextContent (raw);
-            http.ok = http.text.isNotEmpty();
-            if (! http.ok)
-                http.error = "Claude returned an empty response.";
-        }
-        else
-        {
-            http = postChatCompletion (ep, system, finalUser, 1024);
-        }
+        // Same transport for both paths: 60s timeout, one retry on 429/5xx,
+        // truncation detection — the history body only changes the payload.
+        const auto http = useClaudeHistory
+                              ? postLlmJson (ep, juce::JSON::toString (bodyVar))
+                              : postChatCompletion (ep, system, finalUser, 1024);
 
         if (! http.ok)
         {
@@ -695,7 +700,9 @@ void AIClient::requestMidiPattern (const juce::String& userPrompt,
 
     const auto prompt = userPrompt.trim();
     const auto lockKey = forcedKey.trim();
-    auto retrieval = knowledgeBase.retrieveForQuery (prompt, 14000, true); // MIDI path: bias groove docs
+    // MIDI path: bias groove docs; skip the master Brain doc — it is injected
+    // into the system prompt below, so it must not appear twice per request.
+    auto retrieval = knowledgeBase.retrieveForQuery (prompt, 14000, true, false);
     const auto knowledgeCtx = retrieval.context;
     const auto matchedDocs = retrieval.matchedDocs;
     const int docsUsed = matchedDocs.size();
@@ -705,9 +712,12 @@ void AIClient::requestMidiPattern (const juce::String& userPrompt,
     const auto ep = endpointSnapshot();               // by value for the worker
     const auto masterBrain = knowledgeBase.masterPromptText(); // read on message thread
 
-    juce::Thread::launch ([this, prompt, lockKey, knowledgeCtx, projCtx, matchedDocs,
+    juce::Thread::launch ([this, alive = alive, prompt, lockKey, knowledgeCtx, projCtx, matchedDocs,
                            docsUsed, recentProgressions, variationNonce, ep, masterBrain, callback]
     {
+        if (! alive->load())
+            return; // AIClient destroyed before the worker started
+
         PatternResponse resp;
         resp.knowledgeDocsUsed = docsUsed;
         resp.matchedDocTitles = matchedDocs;
@@ -778,7 +788,8 @@ void AIClient::requestMidiPattern (const juce::String& userPrompt,
                     "those rules and the project key/BPM/bars.";
         }
 
-        auto http = postChatCompletion (ep, system, user, 8192);
+        // Pattern path runs hot (0.9) so repeated requests explore new ideas.
+        auto http = postChatCompletion (ep, system, user, 8192, 0.9);
         if (! http.ok)
         {
             resp.ok = false;
@@ -798,13 +809,13 @@ void AIClient::requestMidiPattern (const juce::String& userPrompt,
 
         // One automatic retry when Claude returns harmony already heard in this
         // session. The second prompt is explicit instead of silently accepting
-        // the familiar progression again.
-        if (! rememberProgressionIfFresh (parsed.pattern))
+        // the familiar progression again. (Member access is gated on `alive`.)
+        if (alive->load() && ! rememberProgressionIfFresh (parsed.pattern))
         {
             auto retryUser = user + "\n\nREJECTED: that chord progression matches a recent result. "
                 "Compose a genuinely different progression now. Change the functional root motion "
                 "and at least two of: chord rhythm, extensions, inversions, or voice-leading contour.";
-            http = postChatCompletion (ep, system, retryUser, 8192);
+            http = postChatCompletion (ep, system, retryUser, 8192, 0.9);
             if (! http.ok)
             {
                 resp.ok = false;
@@ -820,7 +831,8 @@ void AIClient::requestMidiPattern (const juce::String& userPrompt,
                 juce::MessageManager::callAsync ([callback, resp] { callback (resp); });
                 return;
             }
-            (void) rememberProgressionIfFresh (parsed.pattern);
+            if (alive->load())
+                (void) rememberProgressionIfFresh (parsed.pattern);
         }
 
         resp.ok = true;

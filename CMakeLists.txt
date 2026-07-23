@@ -32,6 +32,11 @@ juce_add_binary_data(AIMidiGenBrainData
 # ---------------------------------------------------------------------------
 # Plugin target
 # ---------------------------------------------------------------------------
+# Copying into the user's plugin folder is a dev convenience on the Mac; on
+# build servers (or anywhere the folder isn't writable) it breaks the build,
+# so allow -DAIMIDIGEN_COPY_PLUGIN=OFF to skip it.
+option(AIMIDIGEN_COPY_PLUGIN "Copy the built plugin into the user plugin folder" ON)
+
 juce_add_plugin(AIMidiGen
     PRODUCT_NAME            "ComposerAI"
     COMPANY_NAME            "ComposerAI"
@@ -44,7 +49,7 @@ juce_add_plugin(AIMidiGen
     NEEDS_MIDI_OUTPUT       TRUE
     IS_MIDI_EFFECT          FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS TRUE
-    COPY_PLUGIN_AFTER_BUILD TRUE
+    COPY_PLUGIN_AFTER_BUILD ${AIMIDIGEN_COPY_PLUGIN}
     VST3_CATEGORIES         "Instrument" "Tools"
     AU_MAIN_TYPE            "kAudioUnitType_MusicDevice"
     ICON_BIG                "${CMAKE_SOURCE_DIR}/branding/composerai/ComposerAI.icon.png"
@@ -119,3 +124,18 @@ add_executable(EngineTests
 )
 target_include_directories(EngineTests PRIVATE src src/engine)
 add_test (NAME EngineTests COMMAND EngineTests)
+
+# ---------------------------------------------------------------------------
+# Generator audit (property tests): every style x seed x key must produce
+# in-key, in-loop, overlap-free, deterministic parts — guards the validator.
+# ---------------------------------------------------------------------------
+add_executable(GeneratorAuditTests
+    tests/GeneratorAuditTests.cpp
+    src/engine/MidiGenerator.cpp
+)
+target_include_directories(GeneratorAuditTests PRIVATE src)
+target_link_libraries(GeneratorAuditTests PRIVATE
+    juce::juce_audio_basics
+    juce::juce_core
+)
+add_test (NAME GeneratorAuditTests COMMAND GeneratorAuditTests)

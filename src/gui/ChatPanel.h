@@ -41,7 +41,7 @@ private:
         void setText (const juce::String& t);
         void paint (juce::Graphics&) override;
         void resized() override;
-        int preferredHeight (int width) const;
+        int preferredHeight (int width);
         Role getRole() const { return role; }
 
     private:
@@ -49,6 +49,9 @@ private:
         juce::String text;
         juce::AttributedString attributed;
         juce::TextLayout layout;
+        int layoutWidth = -1;      // width the TextLayout was built for
+        int cachedPrefWidth = -1;  // preferredHeight cache (invalidated on setText)
+        int cachedPrefHeight = 0;
         void rebuildLayout (int width);
     };
 

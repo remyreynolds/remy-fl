@@ -14,12 +14,17 @@ ChatPanel::Bubble::Bubble (Role r, juce::String t)
 void ChatPanel::Bubble::setText (const juce::String& t)
 {
     text = t;
+    layoutWidth = -1;     // invalidate caches
+    cachedPrefWidth = -1;
     resized();
     repaint();
 }
 
 void ChatPanel::Bubble::rebuildLayout (int width)
 {
+    if (width == layoutWidth)
+        return; // layout already built for this width
+
     const int padX = role == Role::User ? 120 : 32;
     const int textW = juce::jmax (40, width - padX);
 
@@ -30,18 +35,22 @@ void ChatPanel::Bubble::rebuildLayout (int width)
                        role == Role::Thinking ? CustomLookAndFeel::txt2
                                              : CustomLookAndFeel::txt1);
     layout.createLayout (attributed, (float) textW);
+    layoutWidth = width;
 }
 
-int ChatPanel::Bubble::preferredHeight (int width) const
+int ChatPanel::Bubble::preferredHeight (int width)
 {
-    ChatPanel::Bubble tmp (role, text);
-    tmp.rebuildLayout (width);
-    const float h = tmp.layout.getHeight();
-    if (role == Role::User)
-        return (int) std::ceil (h + 32.0f);
     if (role == Role::Thinking)
         return 28;
-    return (int) std::ceil (h + 20.0f);
+    if (width == cachedPrefWidth)
+        return cachedPrefHeight; // avoid rebuilding a TextLayout every tick
+
+    rebuildLayout (width);
+    const float h = layout.getHeight();
+    cachedPrefWidth = width;
+    cachedPrefHeight = role == Role::User ? (int) std::ceil (h + 32.0f)
+                                          : (int) std::ceil (h + 20.0f);
+    return cachedPrefHeight;
 }
 
 void ChatPanel::Bubble::resized()
@@ -333,7 +342,10 @@ void ChatPanel::fireSend()
     input.clear();
 
     if (attachedMidiContext.isNotEmpty())
+    {
         t << "\n\n[ATTACHED MIDI CONTEXT]\n" << attachedMidiContext;
+        clearMidiAttachment(); // context rides along once, not on every message
+    }
 
     if (onSend) onSend (t);
 }
@@ -380,9 +392,17 @@ void ChatPanel::timerCallback()
 
 void ChatPanel::refreshThreadLayout()
 {
+    // Only auto-scroll when the user was already at (or near) the bottom —
+    // don't yank the view away from someone reading scrollback.
+    const bool wasNearBottom =
+        viewport.getViewPositionY() + viewport.getViewHeight()
+            >= thread.getHeight() - 48;
+
     const int w = juce::jmax (200, viewport.getWidth());
     thread.layoutBubbles (w);
-    scrollToBottom();
+
+    if (wasNearBottom)
+        scrollToBottom();
 }
 
 void ChatPanel::scrollToBottom()

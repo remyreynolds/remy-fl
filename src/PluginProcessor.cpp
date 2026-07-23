@@ -941,8 +941,12 @@ void AIMidiGenProcessor::varyChordsWithAI (std::function<void (AIClient::Pattern
 
     aiClient.setProjectContext (buildProjectContextBrief());
     aiClient.requestMidiPattern (prompt, forcedKey,
-        [this, onDone] (AIClient::PatternResponse r)
+        [this, weakThis = juce::WeakReference<AIMidiGenProcessor> (this), onDone]
+        (AIClient::PatternResponse r)
         {
+            if (weakThis == nullptr)
+                return; // processor destroyed while the request was in flight
+
             if (r.ok)
             {
                 juce::String err;
@@ -998,9 +1002,14 @@ void AIMidiGenProcessor::regenerateFromAI (const juce::String& prompt,
                                            std::function<void (AIClient::PatternResponse)> onDone)
 {
     const auto forcedKey = juce::String (formatKeyString (projectParams));
+    aiClient.setProjectContext (buildProjectContextBrief()); // ground the AI in the live project
     aiClient.requestMidiPattern (prompt, forcedKey,
-        [this, prompt, onDone] (AIClient::PatternResponse r)
+        [this, weakThis = juce::WeakReference<AIMidiGenProcessor> (this), prompt, onDone]
+        (AIClient::PatternResponse r)
         {
+            if (weakThis == nullptr)
+                return; // processor destroyed while the request was in flight
+
             if (r.ok)
             {
                 (void) autoDetectGenreFromText (prompt + " " + juce::String (projectParams.genre));
@@ -1057,8 +1066,12 @@ void AIMidiGenProcessor::transformPartWithAI (InstrumentType t,
     const auto ctx = serializePartAsMidiContext (src, projectParams);
     const auto forcedKey = juce::String (formatKeyString (projectParams));
     aiClient.requestMidiTransform (mode, toString (t), ctx, forcedKey,
-        [this, onDone, t] (AIClient::PatternResponse r)
+        [this, weakThis = juce::WeakReference<AIMidiGenProcessor> (this), onDone, t]
+        (AIClient::PatternResponse r)
         {
+            if (weakThis == nullptr)
+                return; // processor destroyed while the request was in flight
+
             if (r.ok)
             {
                 juce::String err;
@@ -1124,8 +1137,12 @@ void AIMidiGenProcessor::handleChatTurn (const juce::String& prompt,
 
     const auto forcedKey = juce::String (formatKeyString (projectParams));
     aiClient.handleUserTurn (prompt, forcedKey,
-        [this, prompt, onDone] (AIClient::TurnResponse r)
+        [this, weakThis = juce::WeakReference<AIMidiGenProcessor> (this), prompt, onDone]
+        (AIClient::TurnResponse r)
         {
+            if (weakThis == nullptr)
+                return; // processor destroyed while the request was in flight
+
             if (r.ok && r.generatedMidi)
             {
                 (void) autoDetectGenreFromText (prompt);

@@ -51,8 +51,9 @@ private:
     void refreshLastRunMeta();
     void applyWorkspaceFocus();
     void syncEffectiveMutes();
-    void beginGeneratingUi (bool autoClear = true);
+    void beginGeneratingUi();
     void clearGeneratingUi();
+    void showGenerateError (const juce::String& message);
     bool isTypeInFocus (InstrumentType type) const;
     void generateFocusedParts();
     void generateFocusedLane();
@@ -151,9 +152,9 @@ private:
     std::array<bool, (size_t) InstrumentType::NumTypes> baseMute {}; // user mute before solo overlay
     std::array<bool, (size_t) DrumPiece::NumPieces> pieceBaseMute {}; // per-piece kit mutes (survive lane mute/solo)
     bool generatingUi = false;
-    juce::uint32 generatingClearAtMs = 0;
     juce::String lastRunSeed;
-    juce::String lastRunMs;
+    juce::Label generateErrorLabel;          // transient failure banner on Generate surface
+    juce::uint32 generateErrorHideAtMs = 0;  // auto-hide deadline (~6s)
 
     MidiRollView midiRoll;
     ChordDashboardView chordDashboard;

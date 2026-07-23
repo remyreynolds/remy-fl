@@ -45,7 +45,7 @@ beforeEach(() => {
 describe('global keyboard map', () => {
   it('supports command-enter, take numbers, and space preview', async () => {
     render(<App />)
-    await screen.findByText('relay connected')
+    await screen.findByText('connected')
     await userEvent.type(screen.getByLabelText('Generation prompt'), 'dark deep house chords')
     await userEvent.click(screen.getByText('×3 takes'))
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true })

@@ -44,7 +44,9 @@ void KnowledgeBase::writeStarterDocIfEmpty()
         const juce::String bundledMaster = bundledMasterData != nullptr
             ? juce::String (bundledMasterData, (size_t) juce::jmax (0, bundledMasterSize))
             : juce::String();
-        if (bundledMaster.trim().isNotEmpty())
+        // Only seed the master prompt when the file doesn't exist yet —
+        // rewriting it on every construction would clobber user edits.
+        if (! dest.existsAsFile() && bundledMaster.trim().isNotEmpty())
             dest.replaceWithText (bundledMaster);
 
         juce::File shipped;
@@ -458,7 +460,8 @@ int KnowledgeBase::scoreChunk (const Chunk& chunk, const juce::StringArray& keyw
 
 KnowledgeBase::RetrievalResult KnowledgeBase::retrieveForQuery (const juce::String& query,
                                                                 int maxChars,
-                                                                bool forGeneration) const
+                                                                bool forGeneration,
+                                                                bool includeMasterDoc) const
 {
     RetrievalResult result;
     if (docs.empty())
@@ -524,17 +527,21 @@ KnowledgeBase::RetrievalResult KnowledgeBase::retrieveForQuery (const juce::Stri
 
     juce::String out;
 
-    // Inject the master prompt first when present. The header is only
-    // written together with a body — an empty "MASTER (always obey)" banner
-    // with nothing under it just confuses the model.
-    for (auto& doc : docs)
+    // Inject the master prompt first when present (skipped when the caller
+    // already injects it into the system prompt — never send it twice). The
+    // header is only written together with a body — an empty "MASTER (always
+    // obey)" banner with nothing under it just confuses the model.
+    if (includeMasterDoc)
     {
-        if (doc.id.containsIgnoreCase ("master-system") || doc.title.containsIgnoreCase ("master-system"))
+        for (auto& doc : docs)
         {
-            out << "===== MASTER SYSTEM PROMPT (always obey) =====\n"
-                << doc.body.trim() << "\n===== END MASTER =====\n\n";
-            result.matchedDocs.addIfNotAlreadyThere (doc.title);
-            break;
+            if (doc.id.containsIgnoreCase ("master-system") || doc.title.containsIgnoreCase ("master-system"))
+            {
+                out << "===== MASTER SYSTEM PROMPT (always obey) =====\n"
+                    << doc.body.trim() << "\n===== END MASTER =====\n\n";
+                result.matchedDocs.addIfNotAlreadyThere (doc.title);
+                break;
+            }
         }
     }
 

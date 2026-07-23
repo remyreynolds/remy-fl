@@ -289,12 +289,9 @@ MidiPatternParseResult parseClaudeMidiJson (const juce::String& jsonText)
         result.error = "Missing \"bpm\".";
         return result;
     }
-    p.bpm = (int) root.getProperty ("bpm", 0);
-    if (p.bpm < 60 || p.bpm > 180)
-    {
-        result.error = "bpm must be between 60 and 180 (got " + juce::String (p.bpm) + ").";
-        return result;
-    }
+    // Clamp instead of rejecting: an out-of-range tempo from the model
+    // shouldn't throw away an otherwise good pattern.
+    p.bpm = juce::jlimit (60, 200, (int) root.getProperty ("bpm", 0));
 
     if (! root.hasProperty ("bars"))
     {
@@ -413,6 +410,35 @@ MidiPatternParseResult parseClaudeMidiJson (const juce::String& jsonText)
         }
     }
 
+    // Repair notes that overrun the loop instead of rejecting the whole
+    // pattern (mirrors the engine validator's clamp behaviour): notes that
+    // start inside the loop get their tail trimmed; notes that start at or
+    // after the loop end are dropped.
+    {
+        double beatsPerBar = 4.0;
+        const int tsNumerator = p.timeSignature
+                                    .upToFirstOccurrenceOf ("/", false, false)
+                                    .trim().getIntValue();
+        if (tsNumerator >= 1 && tsNumerator <= 32)
+            beatsPerBar = (double) tsNumerator;
+
+        const double loopBeats = (double) p.bars * beatsPerBar;
+        auto clampLane = [loopBeats] (std::vector<PatternNote>& notes)
+        {
+            notes.erase (std::remove_if (notes.begin(), notes.end(),
+                             [loopBeats] (const PatternNote& n)
+                             { return n.startBeat >= loopBeats; }),
+                         notes.end());
+            for (auto& n : notes)
+                if (n.startBeat + n.durationBeats > loopBeats)
+                    n.durationBeats = loopBeats - n.startBeat;
+        };
+
+        clampLane (p.notes);
+        for (auto& lane : p.parts)
+            clampLane (lane.notes);
+    }
+
     result.ok = true;
     return result;
 }
@@ -460,15 +486,21 @@ void applyKeyStringToParams (const juce::String& key, MusicParams& params)
 juce::MidiMessageSequence patternToSequence (const MidiPattern& pattern, int ppq)
 {
     juce::MidiMessageSequence seq;
-    const int ch = midiChannelFor (instrumentTypeFromName (pattern.instrument));
 
-    for (const auto& n : pattern.notes)
+    // Serialize EVERY lane (multi-part loops included), one MIDI channel
+    // per lane — single-part patterns still come through lanes() as one.
+    for (const auto& lane : pattern.lanes())
     {
-        const double onTick  = n.startBeat * (double) ppq;
-        const double offTick = (n.startBeat + n.durationBeats) * (double) ppq;
-        const auto vel = (juce::uint8) juce::jlimit (1, 127, n.velocity);
-        seq.addEvent (juce::MidiMessage::noteOn  (ch, n.pitchMidi, vel), onTick);
-        seq.addEvent (juce::MidiMessage::noteOff (ch, n.pitchMidi),      offTick);
+        const int ch = midiChannelFor (instrumentTypeFromName (lane.instrument));
+
+        for (const auto& n : lane.notes)
+        {
+            const double onTick  = n.startBeat * (double) ppq;
+            const double offTick = (n.startBeat + n.durationBeats) * (double) ppq;
+            const auto vel = (juce::uint8) juce::jlimit (1, 127, n.velocity);
+            seq.addEvent (juce::MidiMessage::noteOn  (ch, n.pitchMidi, vel), onTick);
+            seq.addEvent (juce::MidiMessage::noteOff (ch, n.pitchMidi),      offTick);
+        }
     }
 
     seq.sort();

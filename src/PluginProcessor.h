@@ -295,6 +295,9 @@ private:
     std::atomic<bool>   seqRebuildRequested { false };
     void handleAsyncUpdate() override;
 
+    /** AI completion lambdas hold a WeakReference so a processor destroyed
+        mid-request is detected instead of dereferenced (use-after-free). */
+    JUCE_DECLARE_WEAK_REFERENCEABLE (AIMidiGenProcessor)
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AIMidiGenProcessor)
 };
 

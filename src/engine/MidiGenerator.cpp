@@ -556,15 +556,48 @@ int MidiGenerator::validate (GeneratedPart& part, const MusicParams& p)
     const int rootPc = rootPitchClass (p.root);
     const auto ivals = scaleIntervals (p.scale);
     const bool pitched = part.type != InstrumentType::Drums;
+    const double loopEnd = std::max (1, p.bars) * 4.0;
+
+    // Drop notes that start at/after the loop end — they'd never sound in the
+    // loop and overhang into the next repeat when exported.
+    {
+        const size_t before = part.notes.size();
+        part.notes.erase (std::remove_if (part.notes.begin(), part.notes.end(),
+                                          [loopEnd] (const NoteEvent& n)
+                                          { return n.startBeats >= loopEnd - 1e-6; }),
+                          part.notes.end());
+        repaired += (int) (before - part.notes.size());
+    }
 
     // Apply swing to offbeat 1/8s and humanization to timing/velocity.
     for (auto& n : part.notes)
     {
         if (pitched)
         {
-            const int snapped = snapToScale (n.pitch, rootPc, ivals);
-            if (snapped != n.pitch) { n.pitch = snapped; ++repaired; }
-            n.pitch = std::clamp (n.pitch, 0, 127);
+            // Clamp BEFORE snapping: snapping an out-of-range pitch and then
+            // clamping could land out of key (e.g. 300 -> snap -> clamp 127).
+            const int original = n.pitch;
+            int s = snapToScale (std::clamp (n.pitch, 0, 127), rootPc, ivals);
+            // Snap moves at most a tritone, so an octave shift (which keeps
+            // the pitch class, i.e. stays in key) fixes any range spill.
+            if (s > 127) s -= 12;
+            if (s < 0)   s += 12;
+            n.pitch = s;
+            if (n.pitch != original) ++repaired;
+        }
+
+        // Repair broken durations, and keep note tails inside the loop.
+        if (! (n.lengthBeats > 1e-3)) { n.lengthBeats = 0.25; ++repaired; }
+        if (n.startBeats + n.lengthBeats > loopEnd)
+        {
+            n.lengthBeats = std::max (0.05, loopEnd - n.startBeats);
+            ++repaired;
+        }
+        // Velocity into a sane audible range even when humanize is 0.
+        if (! (n.velocity > 0.0f) || n.velocity > 1.0f)
+        {
+            n.velocity = std::clamp (n.velocity, 0.05f, 1.0f);
+            ++repaired;
         }
 
         // Swing: push the "and" of the beat later (1/8 swing), and give the
@@ -594,21 +627,51 @@ int MidiGenerator::validate (GeneratedPart& part, const MusicParams& p)
         n.velocity    = std::clamp (n.velocity + (rand01() - 0.5f) * 0.2f * p.humanize,
                                     0.05f, 1.0f);
         if (n.startBeats < 0.0) n.startBeats = 0.0;
+
+        // Swing/humanize shifts happen after the loop-bounds repair above, so
+        // re-clamp: starts stay inside the loop, tails never spill past it.
+        if (n.startBeats >= loopEnd - 0.05)
+            n.startBeats = loopEnd - 0.05;
+        if (n.startBeats + n.lengthBeats > loopEnd)
+            n.lengthBeats = std::max (0.01, loopEnd - n.startBeats);
     }
 
-    // Sort and de-overlap same-pitch notes.
+    // Sort, drop same-instant same-pitch duplicates (keep the louder hit —
+    // duplicates cause stuck notes / doubled hits in the DAW), then shorten
+    // earlier notes so no same-pitch pair overlaps.
     std::sort (part.notes.begin(), part.notes.end(),
                [] (const NoteEvent& a, const NoteEvent& b)
-               { return a.startBeats < b.startBeats; });
+               {
+                   if (a.startBeats != b.startBeats) return a.startBeats < b.startBeats;
+                   if (a.pitch      != b.pitch)      return a.pitch      < b.pitch;
+                   return a.velocity > b.velocity; // louder first -> kept
+               });
+
+    {
+        const size_t before = part.notes.size();
+        part.notes.erase (std::unique (part.notes.begin(), part.notes.end(),
+                                       [] (const NoteEvent& a, const NoteEvent& b)
+                                       {
+                                           return a.pitch == b.pitch
+                                               && std::abs (a.startBeats - b.startBeats) < 0.02;
+                                       }),
+                          part.notes.end());
+        repaired += (int) (before - part.notes.size());
+    }
 
     for (size_t i = 0; i < part.notes.size(); ++i)
         for (size_t j = i + 1; j < part.notes.size(); ++j)
         {
             auto& a = part.notes[i];
             auto& b = part.notes[j];
-            if (a.pitch == b.pitch && b.startBeats < a.startBeats + a.lengthBeats)
+            if (b.startBeats >= a.startBeats + a.lengthBeats)
+                break; // sorted by start: nothing later can overlap `a` either
+            if (a.pitch == b.pitch)
             {
-                a.lengthBeats = std::max (0.05, b.startBeats - a.startBeats - 0.01);
+                // Duplicates within 0.02 beats were removed above, so the gap
+                // here is always >= 0.02 and the shortened length can't
+                // re-overlap: 0.02 - 0.01 = 0.01 minimum true gap.
+                a.lengthBeats = std::max (0.01, b.startBeats - a.startBeats - 0.01);
                 ++repaired;
             }
         }

@@ -97,8 +97,9 @@ juce::Rectangle<float> MidiRollView::getNoteArea() const
 
 void MidiRollView::resized()
 {
-    auto r = getLocalBounds().reduced (16, 14);
-    auto top = r.removeFromTop (22);
+    // Same insets as paint()/getNoteArea(): reduced(12) + 24px title strip.
+    auto r = getLocalBounds().reduced (12);
+    auto top = r.removeFromTop (24);
     title.setBounds (top.removeFromLeft (juce::jmin (280, top.getWidth() * 45 / 100)));
     auto badge = top.removeFromRight (72).withSizeKeepingCentre (72, 20);
     subtitle.setBounds (badge);
@@ -137,7 +138,7 @@ void MidiRollView::paint (juce::Graphics& g)
 
     const float leftGutter = 32.0f;
     auto grid = roll.reduced (1.0f);
-    auto noteArea = grid.withTrimmedLeft (leftGutter);
+    auto noteArea = getNoteArea(); // shared with resized() — single source of truth
 
     const int pitchSpan = juce::jmax (1, pitchMax - pitchMin + 1);
     const float rowH = noteArea.getHeight() / (float) pitchSpan;

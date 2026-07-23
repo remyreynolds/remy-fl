@@ -20,6 +20,7 @@ public:
     std::function<void (bool)> onMuteChanged;
     std::function<void (float)> onVolumeChanged; // 0..1
     std::function<void (int)> onTimbreChanged;   // PartTimbre index / combo id
+    std::function<void()> onExport;              // save-as dialog owned by the editor
     std::function<juce::File()> requestMidiFile;
 
     void setTrack (InstrumentType type, bool hasContent, const juce::String& notesLine);
@@ -50,11 +51,9 @@ private:
 
     juce::Label title;
     juce::Label trackTag { {}, "TRACK" };
-    juce::Label midiLabel { {}, "MIDI" };
     juce::Label synthLabel { {}, "SYNTH" };
     juce::Label notesWell;
     juce::Label volLabel;
-    juce::ComboBox midiCombo;
     juce::ComboBox synthCombo;
     juce::TextButton generateBtn { "Generate" };
     juce::TextButton varyBtn { "Vary" };

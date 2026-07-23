@@ -346,7 +346,8 @@ public:
         g.drawHorizontalLine ((int) r.getY() + 1, r.getX() + 12.0f, r.getRight() - 12.0f);
     }
 
-    /** macOS-style title bar (42px) — traffic lights + centred title */
+    /** Plugin title bar (42px) — centred title. (No fake macOS traffic lights:
+        the plugin window's real chrome belongs to the host.) */
     static void drawTitleBar (juce::Graphics& g, juce::Rectangle<int> bounds)
     {
         juce::ColourGradient hg (juce::Colour (0x0fffffff), 0.0f, (float) bounds.getY(),
@@ -355,19 +356,6 @@ public:
         g.fillRect (bounds);
         g.setColour (juce::Colours::white.withAlpha (0.08f));
         g.drawHorizontalLine (bounds.getBottom() - 1, 0.0f, (float) bounds.getRight());
-
-        auto lights = bounds.withTrimmedLeft (16).removeFromLeft (52).withSizeKeepingCentre (52, 12);
-        const juce::Colour cols[] = { juce::Colour (0xffFF5F57), juce::Colour (0xffFEBC2E),
-                                      juce::Colour (0xff28C840) };
-        for (int i = 0; i < 3; ++i)
-        {
-            auto d = juce::Rectangle<float> ((float) lights.getX() + (float) i * 20.0f,
-                                             (float) lights.getCentreY() - 6.0f, 12.0f, 12.0f);
-            g.setColour (cols[i]);
-            g.fillEllipse (d);
-            g.setColour (juce::Colours::white.withAlpha (0.30f));
-            g.drawEllipse (d.reduced (0.5f), 1.0f);
-        }
 
         g.setColour (txt2);
         g.setFont (font (13.0f, juce::Font::bold));

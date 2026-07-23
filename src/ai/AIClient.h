@@ -4,12 +4,21 @@
 #include "MidiPattern.h"
 #include "KnowledgeBase.h"
 #include <juce_core/juce_core.h>
-#include <functional>
+#include <atomic>
 #include <deque>
+#include <functional>
+#include <memory>
 #include <vector>
 
 namespace aimidi
 {
+/** Strip whitespace and CR/LF from a pasted / env API key before it is
+    stored or placed into an HTTP header (header-injection guard). */
+inline juce::String sanitizeApiKey (const juce::String& key)
+{
+    return key.removeCharacters ("\r\n").trim();
+}
+
 /** LLM client (Claude / OpenAI): conversational chat by default; MIDI generation
     when the user asks to make/vary/continue something. Knowledge docs are
     retrieved and injected for both paths. */
@@ -62,6 +71,7 @@ public:
     using TurnCallback = std::function<void (TurnResponse)>;
 
     AIClient();
+    ~AIClient();
 
     void setProvider (Provider p);
     Provider getProvider() const { return provider; }
@@ -149,6 +159,11 @@ private:
     std::deque<juce::String> recentChordProgressions;
     mutable juce::CriticalSection progressionHistoryLock;
 
+    /** Set false in the destructor. Detached worker threads and queued
+        async lambdas capture this by value and early-return once it is
+        false, so they never touch a destroyed AIClient. */
+    std::shared_ptr<std::atomic<bool>> alive = std::make_shared<std::atomic<bool>> (true);
+
     void pushHistory (bool fromUser, const juce::String& text);
     juce::var buildChatMessagesBody (const juce::String& system,
                                      const juce::String& latestUserWithRefs) const;
@@ -168,14 +183,19 @@ private:
     static LlmHttpResult postChatCompletion (const Endpoint& ep,
                                              const juce::String& system,
                                              const juce::String& user,
-                                             int maxTokens);
+                                             int maxTokens,
+                                             double temperature = -1.0);
+    /** Shared HTTP transport for both providers: 60s timeout, one retry on
+        429/5xx honouring Retry-After, truncation detection, text extraction. */
+    static LlmHttpResult postLlmJson (const Endpoint& ep, const juce::String& json);
 
     static juce::String buildChatSystemPrompt();
     static juce::String buildLegacySystemPrompt();
     static juce::var    buildRequestBody (const juce::String& system,
                                           const juce::String& user,
                                           const juce::String& model,
-                                          int maxTokens);
+                                          int maxTokens,
+                                          double temperature = -1.0);
     static juce::var    buildOpenAiRequestBody (const juce::String& system,
                                                 const juce::String& user,
                                                 const juce::String& model,

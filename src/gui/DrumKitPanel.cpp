@@ -147,6 +147,16 @@ void DrumKitPanel::setPieceVolume (DrumPiece piece, float gain01)
     row.suppressVol = false;
 }
 
+void DrumKitPanel::setPieceMuted (DrumPiece piece, bool muted)
+{
+    rows[(size_t) piece].muteBtn.setToggleState (muted, juce::dontSendNotification);
+}
+
+void DrumKitPanel::setPieceLocked (DrumPiece piece, bool locked)
+{
+    rows[(size_t) piece].lockBtn.setToggleState (locked, juce::dontSendNotification);
+}
+
 void DrumKitPanel::setSampleOptions (DrumPiece piece,
                                      const std::vector<const SampleEntry*>& options,
                                      const juce::String& selectedId)
@@ -210,8 +220,9 @@ void DrumKitPanel::resized()
         auto rr = r.removeFromTop (rowH);
         row.label.setBounds (rr.removeFromLeft (42));
         rr.removeFromLeft (2);
-        row.volSlider.setBounds (rr.removeFromLeft (28));
-        rr.removeFromLeft (2);
+        // A usable fader, not a 28px stub — scale with the row, cap at 120px.
+        row.volSlider.setBounds (rr.removeFromLeft (juce::jlimit (56, 120, rr.getWidth() / 5)));
+        rr.removeFromLeft (4);
         // Give the sample picker most of the row — this is what users need to see
         const int btnW = juce::jmax (28, juce::jmin (44, (rr.getWidth() - 8) / 8));
         auto buttons = rr.removeFromRight (btnW * 4 + 6);

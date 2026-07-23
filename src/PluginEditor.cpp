@@ -59,6 +59,16 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
     lastRunMeta.setInterceptsMouseClicks (false, false);
     generateSurface.addAndMakeVisible (lastRunMeta);
 
+    // Transient failure banner — generation errors are otherwise only visible
+    // in the Chat surface. Auto-hides after ~6s (timerCallback).
+    generateErrorLabel.setFont (CustomLookAndFeel::font (11.5f, juce::Font::bold));
+    generateErrorLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::danger);
+    generateErrorLabel.setColour (juce::Label::backgroundColourId,
+                                  CustomLookAndFeel::bg0.withAlpha (0.92f));
+    generateErrorLabel.setJustificationType (juce::Justification::centred);
+    generateErrorLabel.setInterceptsMouseClicks (false, false);
+    generateSurface.addChildComponent (generateErrorLabel);
+
     bpmLabel.setFont (CustomLookAndFeel::font (11.0f, juce::Font::bold));
     bpmLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
     bpmLabel.setJustificationType (juce::Justification::centred);
@@ -200,6 +210,14 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
     {
         if (processor.undoLastGeneration())
         {
+            // Re-seed editor mute state from the restored snapshot so the next
+            // syncEffectiveMutes() doesn't stamp stale mutes over the undo.
+            laneSolo.fill (false);
+            for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
+                baseMute[(size_t) t] = processor.part ((InstrumentType) t).muted;
+            for (int dp = 0; dp < (int) DrumPiece::NumPieces; ++dp)
+                pieceBaseMute[(size_t) dp] = processor.drumPiece ((DrumPiece) dp).muted;
+            syncEffectiveMutes();
             refreshBpmLabel();
             refreshPanels();
         }
@@ -393,6 +411,12 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
         if (! on)
             midiRoll.setPlayheadBeats (-1.0);
     };
+    // Editor may reopen while the processor is already previewing — reflect it.
+    {
+        const bool previewing = processor.isPreviewing();
+        previewButton.setToggleState (previewing, juce::dontSendNotification);
+        previewButton.setButtonText (previewing ? "Stop" : "Preview");
+    }
     addAndMakeVisible (previewButton);
 
     // Reference MIDI becomes a persistent abstract style profile in the Brain.
@@ -705,13 +729,35 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
 
     trackDetail.onGenerate = [this]
     {
-        beginGeneratingUi();
-        if (focusedLane == InstrumentType::Drums)
-            processor.generateDrumKit();
-        else
-            processor.generatePart (focusedLane);
-        refreshLastRunMeta();
-        refreshPanels();
+        // Same path as the hero button — Claude+Brain when connected.
+        generateFocusedLane();
+    };
+    trackDetail.onExport = [this]
+    {
+        auto src = trackDetail.requestMidiFile ? trackDetail.requestMidiFile() : juce::File();
+        if (! src.existsAsFile())
+        {
+            chatPanel.addAssistantMessage ("Nothing to export — generate this track first.");
+            return;
+        }
+        auto chooser = std::make_shared<juce::FileChooser> (
+            "Export MIDI",
+            juce::File::getSpecialLocation (juce::File::userDesktopDirectory)
+                .getChildFile (juce::String (toString (focusedLane)) + ".mid"),
+            "*.mid");
+        juce::Component::SafePointer<AIMidiGenEditor> safe (this);
+        chooser->launchAsync (juce::FileBrowserComponent::saveMode
+                              | juce::FileBrowserComponent::canSelectFiles,
+            [safe, src, chooser] (const juce::FileChooser& fc)
+            {
+                if (safe == nullptr) return;
+                auto dst = fc.getResult();
+                if (dst == juce::File()) return;
+                if (src.copyFileTo (dst))
+                    safe->chatPanel.addAssistantMessage ("Exported MIDI → " + dst.getFileName());
+                else
+                    safe->chatPanel.addAssistantMessage ("Export failed.");
+            });
     };
     trackDetail.onVary = [this]
     {
@@ -774,13 +820,8 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
         lane->onGenerate = [this, type]
         {
             setFocusedLane (type);
-            beginGeneratingUi();
-            if (type == InstrumentType::Drums)
-                processor.generateDrumKit();
-            else
-                processor.generatePart (type);
-            refreshLastRunMeta();
-            refreshPanels();
+            // Same path as the hero button — Claude+Brain when connected.
+            generateFocusedLane();
         };
         lane->onRandomize = [this, type]
         {
@@ -947,6 +988,10 @@ AIMidiGenEditor::~AIMidiGenEditor()
 {
     stopTimer();
     clearGeneratingUi();
+    // Solo is an editor-only overlay — drop it and restore base mutes so a
+    // reopened editor seeds cleanly from the processor's .muted flags.
+    laneSolo.fill (false);
+    syncEffectiveMutes();
     setLookAndFeel (nullptr);
 }
 
@@ -1002,12 +1047,11 @@ void AIMidiGenEditor::timerCallback()
     undoButton.setEnabled (processor.canUndo());
 
     if (generatingUi)
-    {
         midiRoll.repaint(); // shimmer animation
-        if (generatingClearAtMs != 0
-            && juce::Time::getMillisecondCounter() >= generatingClearAtMs)
-            clearGeneratingUi();
-    }
+
+    if (generateErrorLabel.isVisible()
+        && juce::Time::getMillisecondCounter() >= generateErrorHideAtMs)
+        generateErrorLabel.setVisible (false);
 
     // Connected badge breathe glow (2.6s) — only the status chip, not full UI
     if (! statusBadgeBounds.isEmpty() && processor.ai().hasApiKey())
@@ -1108,8 +1152,14 @@ void AIMidiGenEditor::handlePartTransform (InstrumentType type, const juce::Stri
                     juce::String (toString (type)) + " · " + mode
                         + " failed — existing MIDI kept",
                     juce::dontSendNotification);
+                safe->showGenerateError (
+                    juce::String (toString (type)) + " " + mode + " failed: "
+                    + (r.error.isNotEmpty() ? r.error : juce::String ("request failed")));
                 return;
             }
+
+            // Success — retire any stale "Use local generator" offer.
+            safe->useLocalButton.setEnabled (safe->processor.hasPendingLocalOffer());
 
             safe->chatPanel.addAssistantMessage (
                 juce::String ("Generated with Claude — ")
@@ -1599,6 +1649,9 @@ void AIMidiGenEditor::reportGeneration (const GenerationReport& report, bool off
         if (offerLocal && processor.hasPendingLocalOffer())
             msg << " Click “Use local generator” if you want the offline engine.";
         chatPanel.addAssistantMessage (msg);
+        showGenerateError ("Claude failed"
+                           + (report.detail.empty() ? juce::String()
+                                                    : ": " + juce::String (report.detail)));
         refreshLastRunMeta();
         return;
     }
@@ -1629,7 +1682,7 @@ void AIMidiGenEditor::reportGeneration (const GenerationReport& report, bool off
 
 void AIMidiGenEditor::runNewIdea()
 {
-    beginGeneratingUi (false); // async: callback clears
+    beginGeneratingUi(); // async: callback clears
     chatPanel.setBusy (true);
     juce::Component::SafePointer<AIMidiGenEditor> safe (this);
     processor.newIdeaPreferred ([safe] (GenerationReport report)
@@ -1644,7 +1697,7 @@ void AIMidiGenEditor::runNewIdea()
 
 void AIMidiGenEditor::generateFocusedLane()
 {
-    beginGeneratingUi (false); // async: callback clears
+    beginGeneratingUi(); // async: callback clears
     chatPanel.setBusy (true);
     juce::Component::SafePointer<AIMidiGenEditor> safe (this);
     processor.generatePreferredLane (focusedLane, [safe] (GenerationReport report)
@@ -1659,7 +1712,7 @@ void AIMidiGenEditor::generateFocusedLane()
 
 void AIMidiGenEditor::generateFocusedParts()
 {
-    beginGeneratingUi (false); // both branches clear explicitly
+    beginGeneratingUi(); // both branches clear explicitly
     // Focused "Generate all" with Focus combo filters still uses the local
     // engine for the filtered subset (lane-by-lane Claude would mix plans).
     if (focusCombo.getSelectedId() > 1)
@@ -1700,8 +1753,13 @@ void AIMidiGenEditor::generateFocusedParts()
 
 bool AIMidiGenEditor::keyPressed (const juce::KeyPress& key)
 {
+    // Don't steal space (or anything else) while an interactive control has
+    // focus — space would otherwise both click the control and toggle preview.
     if (auto* focused = juce::Component::getCurrentlyFocusedComponent())
-        if (dynamic_cast<juce::TextEditor*> (focused) != nullptr)
+        if (dynamic_cast<juce::TextEditor*> (focused) != nullptr
+            || dynamic_cast<juce::Button*> (focused) != nullptr
+            || dynamic_cast<juce::ComboBox*> (focused) != nullptr
+            || dynamic_cast<juce::Slider*> (focused) != nullptr)
             return false;
 
     if (key == juce::KeyPress::spaceKey)
@@ -1790,8 +1848,13 @@ void AIMidiGenEditor::refreshPanels()
     }
 
     for (int dp = 0; dp < (int) DrumPiece::NumPieces; ++dp)
-        drumKitPanel.setPieceHasContent ((DrumPiece) dp,
-            ! processor.drumPiece ((DrumPiece) dp).notes.empty());
+    {
+        const auto piece = (DrumPiece) dp;
+        drumKitPanel.setPieceHasContent (piece,
+            ! processor.drumPiece (piece).notes.empty());
+        drumKitPanel.setPieceMuted (piece, pieceBaseMute[(size_t) dp]);
+        drumKitPanel.setPieceLocked (piece, processor.drumPiece (piece).locked);
+    }
 
     apiStatusLabel.setText (processor.ai().hasApiKey()
                                 ? (processor.ai().providerDisplayName() + " · "
@@ -1910,12 +1973,13 @@ void AIMidiGenEditor::resized()
     scaleCombo.setBounds (footer.removeFromLeft (100).reduced (0, 1));
     footer.removeFromLeft (12);
 
-    // Sunken BPM well: value + "BPM · HOST" + small +
-    bpmWellBounds = footer.removeFromLeft (148).withSizeKeepingCentre (148, 36);
+    // Sunken BPM well: value + "BPM · HOST" + −/+ nudge buttons
+    bpmWellBounds = footer.removeFromLeft (172).withSizeKeepingCentre (172, 36);
     auto bpmInner = bpmWellBounds.reduced (10, 4);
-    bpmMinus.setBounds ({}); // v4 shows only +
     bpmPlus.setBounds (bpmInner.removeFromRight (20).withSizeKeepingCentre (20, 20));
-    bpmInner.removeFromRight (8);
+    bpmInner.removeFromRight (4);
+    bpmMinus.setBounds (bpmInner.removeFromRight (20).withSizeKeepingCentre (20, 20));
+    bpmInner.removeFromRight (6);
     bpmValue.setFont (CustomLookAndFeel::font (20.0f, juce::Font::bold));
     bpmValue.setBounds (bpmInner.removeFromLeft (48));
     bpmLabel.setFont (CustomLookAndFeel::font (9.0f, juce::Font::bold));
@@ -2034,6 +2098,9 @@ void AIMidiGenEditor::layoutGenerateSurface()
         chordDashboard.setBounds (center);
         drumKitPanel.setBounds ({});
     }
+
+    // Error banner floats over the bottom of the piano roll.
+    generateErrorLabel.setBounds (midiRoll.getBounds().removeFromBottom (26).reduced (12, 1));
 }
 
 void AIMidiGenEditor::layoutBrowseSurface()
@@ -2139,17 +2206,25 @@ void AIMidiGenEditor::syncEffectiveMutes()
     }
 }
 
-void AIMidiGenEditor::beginGeneratingUi (bool autoClear)
+void AIMidiGenEditor::beginGeneratingUi()
 {
     generatingUi = true;
-    // autoClear=false for async AI requests: the completion callback owns
-    // clearing, so a 2.4s timer can't re-enable buttons mid-request.
-    generatingClearAtMs = autoClear ? juce::Time::getMillisecondCounter() + 2400 : 0;
+    // Every caller pairs this with an explicit clearGeneratingUi() — either
+    // synchronously or from the async completion callback. No timer fallback,
+    // so the busy state can't linger after fast local generates.
     const auto name = juce::String (toString (focusedLane));
     midiRoll.setGenerating (true, name);
     trackDetail.setGenerating (true);
     generateLaneButton.setButtonText ("Composing…");
     generateLaneButton.setEnabled (false);
+}
+
+void AIMidiGenEditor::showGenerateError (const juce::String& message)
+{
+    generateErrorLabel.setText (message, juce::dontSendNotification);
+    generateErrorLabel.setVisible (true);
+    generateErrorLabel.toFront (false);
+    generateErrorHideAtMs = juce::Time::getMillisecondCounter() + 6000;
 }
 
 void AIMidiGenEditor::clearGeneratingUi()
@@ -2166,11 +2241,10 @@ void AIMidiGenEditor::refreshLastRunMeta()
 {
     const auto& mp = processor.params();
     lastRunSeed = juce::String ((juce::int64) mp.seed);
-    lastRunMs = "0.8 s";
     const auto name = juce::String (toString (focusedLane));
     const auto& report = processor.lastGenerationReport();
-    juce::String source = report.statusLine.empty()
-        ? juce::String (lastRunMs)
+    const juce::String source = report.statusLine.empty()
+        ? juce::String ("no runs yet")
         : juce::String (report.statusLine);
     lastRunMeta.setText (name + " · " + juce::String (mp.bars) + " bars · "
                              + juce::String (mp.root) + " " + juce::String (mp.scale)
