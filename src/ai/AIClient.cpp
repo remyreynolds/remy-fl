@@ -672,7 +672,15 @@ void AIClient::requestMidiPattern (const juce::String& userPrompt,
         resp.knowledgeDocsUsed = docsUsed;
         resp.matchedDocTitles = matchedDocs;
 
-        juce::String system = buildClaudeMidiSystemPrompt();
+        juce::String system;
+        const auto masterBrain = knowledgeBase.masterPromptText();
+        if (masterBrain.trim().isNotEmpty())
+        {
+            system << "===== MASTER SYSTEM PROMPT (bundled Brain) =====\n"
+                   << masterBrain.trim()
+                   << "\n===== END MASTER SYSTEM PROMPT =====\n\n";
+        }
+        system << buildClaudeMidiSystemPrompt();
         system << "\n\nWorkflow before writing notes:\n"
                   "1) Identify the musical style/genre the user wants.\n"
                   "2) Use the shared brain MUSIC THEORY REFERENCES (same docs as "
@@ -688,7 +696,8 @@ void AIClient::requestMidiPattern (const juce::String& userPrompt,
                   "imagery, energy, era, and adjectives into deliberate harmony, voicing, "
                   "rhythm, register, tension, and note density. Do not fall back to a house "
                   "template when the text gives creative direction.\n"
-                  "7) Return ONLY the MIDI JSON schema — no prose.";
+                  "7) Include explicit \"progression\" + \"chords\" metadata for any chord work.\n"
+                  "8) Return ONLY the MIDI JSON schema — no prose.";
 
         if (lockKey.isNotEmpty())
         {
@@ -891,8 +900,13 @@ void AIClient::sendPrompt (const juce::String& userPrompt,
         }
         else
         {
-            resp = localFallback (contextLine, fb);
-            resp.error = http.error.isNotEmpty() ? http.error : "No network — used local fallback.";
+            resp.ok = false;
+            resp.error = http.error.isNotEmpty()
+                ? http.error
+                : juce::String ("Claude/OpenAI request failed.");
+            resp.assistantText.clear();
+            // Do NOT silently substitute localFallback — callers must show the
+            // error and offer an explicit offline path.
         }
 
         juce::MessageManager::callAsync ([callback, resp] { callback (resp); });
@@ -1024,6 +1038,38 @@ bool AIClient::rememberProgressionIfFresh (const MidiPattern& pattern)
     while (recentChordProgressions.size() > maxRememberedProgressions)
         recentChordProgressions.pop_front();
     return true;
+}
+
+void AIClient::rememberHarmonyFingerprint (const juce::String& fingerprint)
+{
+    if (fingerprint.isEmpty()) return;
+    const juce::ScopedLock lock (progressionHistoryLock);
+    if (std::find (recentChordProgressions.begin(), recentChordProgressions.end(), fingerprint)
+        != recentChordProgressions.end())
+        return;
+    recentChordProgressions.push_back (fingerprint);
+    constexpr size_t maxRememberedProgressions = 8;
+    while (recentChordProgressions.size() > maxRememberedProgressions)
+        recentChordProgressions.pop_front();
+}
+
+bool AIClient::hasRecentHarmonyFingerprint (const juce::String& fingerprint) const
+{
+    if (fingerprint.isEmpty()) return false;
+    const juce::ScopedLock lock (progressionHistoryLock);
+    return std::find (recentChordProgressions.begin(), recentChordProgressions.end(), fingerprint)
+        != recentChordProgressions.end();
+}
+
+void AIClient::clearRecentHarmonyMemory()
+{
+    const juce::ScopedLock lock (progressionHistoryLock);
+    recentChordProgressions.clear();
+}
+
+juce::String AIClient::bundledMasterPromptText() const
+{
+    return knowledgeBase.masterPromptText();
 }
 
 } // namespace aimidi

@@ -2,10 +2,13 @@
 #include "MusicTheory.h"
 #include "StylePresets.h"
 #include "SongPlan.h"
+#include "GenerationReport.h"
 #include "Critic.h"
 #include "ChatDirector.h"
 #include <cassert>
 #include <cstdio>
+#include <set>
+#include <string>
 
 using namespace aimidi;
 
@@ -92,10 +95,10 @@ int main()
         const auto& st = findStyle (p.genre);
         auto plan = buildSongPlan (p, st.chordTones);
         assert ((int) plan.degrees.size() == 8);
-        // first half repeats the preset progression untouched
+        // first half: with seed 0, style default template is used
         for (int bar = 0; bar < 4; ++bar)
             assert (plan.degrees[(size_t) bar] == st.progression[(size_t) bar]);
-        // bar 8 (index 7) is the deterministic cadence substitute
+        // bar 8 (index 7) is the deterministic cadence substitute (seed 0)
         assert (plan.degrees[7] == cadenceDegree (st.progression));
         assert (plan.degrees[7] != st.progression[3]); // it actually changes
         // 4-bar loops are untouched by the cadence rule
@@ -310,6 +313,119 @@ int main()
 
         assert (std::string (chatDirectorHelpText()).size() > 100);
         std::printf ("OK  ChatDirector: 30+ intent parses routed correctly\n");
+    }
+
+    // ---- Seed-aware SongPlan: different seeds → different harmony; same seed stable ----
+    {
+        MusicParams base;
+        base.genre = "Tech House";
+        base.bars = 8;
+        base.seed = 0;
+        const auto& st = findStyle (base.genre);
+        auto a = buildSongPlan (base, st.chordTones);
+        auto a2 = buildSongPlan (base, st.chordTones);
+        assert (a.degrees == a2.degrees);
+        assert (songPlanFingerprint (a) == songPlanFingerprint (a2));
+
+        std::set<std::string> fingerprints;
+        fingerprints.insert (songPlanFingerprint (a));
+        for (unsigned int s = 1; s < 48; ++s)
+        {
+            MusicParams p = base;
+            p.seed = s;
+            fingerprints.insert (songPlanFingerprint (buildSongPlan (p, st.chordTones)));
+        }
+        assert (fingerprints.size() >= 3); // seed must change harmonic identity
+
+        // Shared plan: every instrument call with the same params builds the
+        // same SongPlan (chords/bass/pad/melody all consume this skeleton).
+        MusicParams shared = base;
+        shared.seed = 17;
+        auto planChords = buildSongPlan (shared, st.chordTones);
+        auto planBass   = buildSongPlan (shared, st.chordTones);
+        auto planPad    = buildSongPlan (shared, st.chordTones);
+        assert (planChords.degrees == planBass.degrees);
+        assert (planBass.degrees == planPad.degrees);
+        assert (songPlanFingerprint (planChords) == songPlanFingerprint (planPad));
+        // Same key, different seed → different fingerprint (not rejected merely for key)
+        MusicParams other = shared;
+        other.seed = 18;
+        assert (songPlanFingerprint (buildSongPlan (other, st.chordTones))
+                != songPlanFingerprint (planChords));
+        std::printf ("OK  Seed-aware SongPlan (%zu unique fps in 48 seeds) + shared harmony\n",
+                     fingerprints.size());
+    }
+
+    // ---- New Idea local: rolled seed avoids previous fingerprint ----
+    {
+        MusicParams p;
+        p.genre = "Deep House";
+        p.bars = 8;
+        p.seed = 3;
+        const auto& st = findStyle (p.genre);
+        const auto prev = songPlanFingerprint (buildSongPlan (p, st.chordTones));
+        bool foundDifferent = false;
+        for (int tryIdx = 0; tryIdx < 24; ++tryIdx)
+        {
+            p.seed = 1u + (unsigned int) (1000 + tryIdx * 17);
+            if (songPlanFingerprint (buildSongPlan (p, st.chordTones)) != prev)
+            {
+                foundDifferent = true;
+                break;
+            }
+        }
+        assert (foundDifferent);
+        std::printf ("OK  New Idea can escape previous chord fingerprint\n");
+    }
+
+    // ---- Generation source labels (no silent AI claim for offline / failure) ----
+    {
+        assert (std::string (generationModeLabel (GenerationMode::ClaudeBrain))
+                    == "Generated with Claude");
+        assert (std::string (generationModeLabel (GenerationMode::OfflineLocal))
+                    .find ("local") != std::string::npos);
+        assert (std::string (generationModeLabel (GenerationMode::FailedClaude))
+                    == "Claude failed");
+        GenerationReport failed;
+        failed.mode = GenerationMode::FailedClaude;
+        failed.ok = false;
+        failed.statusLine = "Claude failed";
+        failed.detail = "HTTP 401";
+        assert (! failed.ok);
+        assert (failed.statusLine.find ("Claude") != std::string::npos);
+        assert (failed.detail.find ("401") != std::string::npos);
+        // Offline still identified clearly — never as Claude
+        GenerationReport offline;
+        offline.mode = GenerationMode::OfflineLocal;
+        offline.ok = true;
+        offline.statusLine = "Generated locally — no API key";
+        assert (std::string (generationModeLabel (offline.mode)).find ("Claude")
+                == std::string::npos);
+        assert (offline.statusLine.find ("Claude") == std::string::npos);
+        std::printf ("OK  Generation source labels distinguish Claude / local / failure\n");
+    }
+
+    // ---- Offline SongPlan still works without any API key concept ----
+    {
+        MusicParams p;
+        p.seed = 42;
+        p.bars = 4;
+        const auto& st = findStyle (p.genre);
+        auto plan = buildSongPlan (p, st.chordTones);
+        assert ((int) plan.chords.size() == p.bars);
+        assert (! plan.chords[0].empty());
+        // In-key: every chord tone pitch-class is diatonic
+        const int rootPc = theory::rootPitchClass (p.root);
+        const auto ivals = theory::scaleIntervals (p.scale);
+        for (const auto& chord : plan.chords)
+            for (int n : chord)
+            {
+                const int pc = ((n % 12) - rootPc + 12) % 12;
+                bool inScale = false;
+                for (int iv : ivals) if (iv == pc) inScale = true;
+                assert (inScale);
+            }
+        std::printf ("OK  Offline SongPlan works without API key (in-key chords)\n");
     }
 
     std::printf ("\nAll engine tests passed.\n");

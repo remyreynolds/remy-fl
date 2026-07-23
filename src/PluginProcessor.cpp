@@ -2,6 +2,7 @@
 #include "PluginEditor.h"
 #include "engine/Critic.h"
 #include "engine/ChatDirector.h"
+#include "engine/SongPlan.h"
 #include <algorithm>
 #include <cmath>
 
@@ -616,6 +617,347 @@ void AIMidiGenProcessor::generateAllParts()
         generatePart ((InstrumentType) t, false);
 }
 
+juce::String AIMidiGenProcessor::currentSongPlanFingerprint() const
+{
+    const auto& st = findStyle (projectParams.genre);
+    int tones = st.chordTones;
+    if (projectParams.chordComplexity > 0.75f) ++tones;
+    if (projectParams.chordComplexity < 0.25f) --tones;
+    tones = std::clamp (tones, 3, 6);
+    return juce::String (songPlanFingerprint (buildSongPlan (projectParams, tones)));
+}
+
+bool AIMidiGenProcessor::rollSeedUntilFingerprintChanges (const juce::String& previousFp,
+                                                          int maxTries)
+{
+    if (previousFp.isEmpty())
+    {
+        projectParams.seed = 1u + (unsigned int) juce::Random::getSystemRandom().nextInt (0x7fffffff);
+        return true;
+    }
+
+    for (int i = 0; i < maxTries; ++i)
+    {
+        projectParams.seed = 1u + (unsigned int) juce::Random::getSystemRandom().nextInt (0x7fffffff);
+        if (currentSongPlanFingerprint() != previousFp)
+            return true;
+    }
+    // Last resort: bump seed until degree template index moves.
+    projectParams.seed += 17u;
+    return currentSongPlanFingerprint() != previousFp;
+}
+
+void AIMidiGenProcessor::recordOfflineGeneration (const juce::String& reasonLabel)
+{
+    lastGeneration.mode = GenerationMode::OfflineLocal;
+    lastGeneration.ok = true;
+    lastGeneration.detail.clear();
+    lastGeneration.fingerprint = currentSongPlanFingerprint().toStdString();
+    lastHarmonyFp = juce::String (lastGeneration.fingerprint);
+    lastGeneration.statusLine = reasonLabel.toStdString();
+    pendingLocalOffer = false;
+    pendingLocalAction = PendingLocalAction::None;
+    aiClient.rememberHarmonyFingerprint (lastHarmonyFp);
+}
+
+void AIMidiGenProcessor::recordClaudeSuccess (const MidiPattern& pattern,
+                                              const juce::String& assistant)
+{
+    lastGeneration.mode = GenerationMode::ClaudeBrain;
+    lastGeneration.ok = true;
+    lastGeneration.detail.clear();
+    lastGeneration.fingerprint = chordProgressionFingerprint (pattern).toStdString();
+    if (lastGeneration.fingerprint.empty())
+        lastGeneration.fingerprint = currentSongPlanFingerprint().toStdString();
+    lastHarmonyFp = juce::String (lastGeneration.fingerprint);
+    lastGeneration.statusLine = "Generated with Claude";
+    if (assistant.isNotEmpty())
+        lastGeneration.detail = assistant.toStdString();
+    pendingLocalOffer = false;
+    pendingLocalAction = PendingLocalAction::None;
+}
+
+void AIMidiGenProcessor::recordClaudeFailure (const juce::String& error,
+                                              PendingLocalAction action,
+                                              InstrumentType lane)
+{
+    lastGeneration.mode = GenerationMode::FailedClaude;
+    lastGeneration.ok = false;
+    lastGeneration.statusLine = "Claude failed";
+    lastGeneration.detail = error.toStdString();
+    pendingLocalOffer = true;
+    pendingLocalAction = action;
+    pendingLocalLane = lane;
+}
+
+juce::String AIMidiGenProcessor::buildClaudeGeneratePrompt (InstrumentType focusOrAll) const
+{
+    const auto key = juce::String (formatKeyString (projectParams));
+    juce::String prompt;
+    prompt << "Compose a house MIDI loop using the Groovewright Brain rules.\n"
+           << "Genre/style: " << projectParams.genre << "\n"
+           << "Key: " << key << "\n"
+           << "BPM: " << (int) projectParams.bpm << "\n"
+           << "Bars: " << projectParams.bars << "\n"
+           << "Seed: " << (juce::int64) projectParams.seed << "\n"
+           << "Energy: " << projectParams.energy
+           << "  Complexity: " << projectParams.complexity
+           << "  ChordComplexity: " << projectParams.chordComplexity << "\n";
+
+    if (focusOrAll == InstrumentType::NumTypes)
+    {
+        prompt << "Return the FULL-LOOP parts[] schema with chords, bass, melody, and drums "
+                  "(add pad/arp if it fits the style).\n";
+    }
+    else
+    {
+        prompt << "Focus instrument: " << toString (focusOrAll)
+               << ". Return a single-part OR parts[] that includes this instrument.\n";
+    }
+
+    prompt << "You MUST include explicit harmony metadata:\n"
+              "  \"progression\": short roman/degree summary (e.g. \"i–VI–III–VII\"),\n"
+              "  \"chords\": array of chord symbols per bar (e.g. [\"Fm7\",\"Dbmaj7\",\"Eb7\",\"Cm7\"]).\n"
+              "Chord lane notes must realize those chords (stacked tones sharing startBeat).\n"
+              "Stay strictly in the project key unless Brain docs intentionally request borrowed harmony.\n"
+              "Make this seed feel distinct from recent progressions listed in the request.";
+    return prompt;
+}
+
+void AIMidiGenProcessor::generateAllPartsOffline (const juce::String& reasonLabel)
+{
+    generateAllParts();
+    recordOfflineGeneration (reasonLabel);
+}
+
+void AIMidiGenProcessor::generatePartOffline (InstrumentType t, bool recordUndo,
+                                              const juce::String& reasonLabel)
+{
+    generatePart (t, recordUndo);
+    recordOfflineGeneration (reasonLabel);
+}
+
+void AIMidiGenProcessor::noteOfflineResult (const juce::String& reasonLabel)
+{
+    recordOfflineGeneration (reasonLabel);
+}
+
+void AIMidiGenProcessor::generatePreferredAll (std::function<void (GenerationReport)> onDone)
+{
+    const bool useClaude = ! preferOfflineGeneration && aiClient.hasApiKey();
+    if (! useClaude)
+    {
+        const auto label = preferOfflineGeneration
+            ? "Generated locally — offline mode"
+            : "Generated locally — no API key";
+        generateAllPartsOffline (label);
+        if (onDone) onDone (lastGeneration);
+        return;
+    }
+
+    aiClient.setProjectContext (buildProjectContextBrief());
+    regenerateFromAI (buildClaudeGeneratePrompt (InstrumentType::NumTypes),
+        [this, onDone] (AIClient::PatternResponse r)
+        {
+            if (! r.ok)
+            {
+                recordClaudeFailure (r.error.isNotEmpty() ? r.error
+                                                          : juce::String ("Claude request failed."),
+                                     PendingLocalAction::All);
+                if (onDone) onDone (lastGeneration);
+                return;
+            }
+            recordClaudeSuccess (r.pattern, r.assistantText);
+            if (onDone) onDone (lastGeneration);
+        });
+}
+
+void AIMidiGenProcessor::generatePreferredLane (InstrumentType t,
+                                                std::function<void (GenerationReport)> onDone)
+{
+    if (t == InstrumentType::Drums)
+    {
+        generateDrumKit();
+        recordOfflineGeneration (preferOfflineGeneration
+                                     ? "Generated locally — offline mode"
+                                     : (aiClient.hasApiKey()
+                                            ? "Generated locally — drum kit engine"
+                                            : "Generated locally — no API key"));
+        if (onDone) onDone (lastGeneration);
+        return;
+    }
+
+    const bool useClaude = ! preferOfflineGeneration && aiClient.hasApiKey();
+    if (! useClaude)
+    {
+        const auto label = preferOfflineGeneration
+            ? "Generated locally — offline mode"
+            : "Generated locally — no API key";
+        generatePartOffline (t, true, label);
+        if (onDone) onDone (lastGeneration);
+        return;
+    }
+
+    aiClient.setProjectContext (buildProjectContextBrief());
+    regenerateFromAI (buildClaudeGeneratePrompt (t),
+        [this, onDone, t] (AIClient::PatternResponse r)
+        {
+            if (! r.ok)
+            {
+                recordClaudeFailure (r.error.isNotEmpty() ? r.error
+                                                          : juce::String ("Claude request failed."),
+                                     PendingLocalAction::Lane, t);
+                if (onDone) onDone (lastGeneration);
+                return;
+            }
+            recordClaudeSuccess (r.pattern, r.assistantText);
+            if (onDone) onDone (lastGeneration);
+        });
+}
+
+void AIMidiGenProcessor::newIdeaPreferred (std::function<void (GenerationReport)> onDone)
+{
+    const auto previousFp = lastHarmonyFp.isNotEmpty() ? lastHarmonyFp
+                                                       : currentSongPlanFingerprint();
+    (void) rollSeedUntilFingerprintChanges (previousFp);
+
+    const bool useClaude = ! preferOfflineGeneration && aiClient.hasApiKey();
+    if (! useClaude)
+    {
+        const auto label = preferOfflineGeneration
+            ? "Generated locally — offline mode"
+            : "Generated locally — no API key";
+        generateAllPartsOffline (label);
+        // Guarantee New Idea differs from the previous local fingerprint.
+        if (lastHarmonyFp == previousFp && previousFp.isNotEmpty())
+        {
+            (void) rollSeedUntilFingerprintChanges (previousFp);
+            generateAllParts();
+            recordOfflineGeneration (label);
+        }
+        if (onDone) onDone (lastGeneration);
+        return;
+    }
+
+    aiClient.setProjectContext (buildProjectContextBrief());
+    auto prompt = buildClaudeGeneratePrompt (InstrumentType::NumTypes);
+    prompt << "\nThis is a NEW IDEA request. Seed changed to "
+           << (juce::int64) projectParams.seed
+           << ". Produce a meaningfully different harmonic fingerprint from recent results.";
+
+    regenerateFromAI (prompt,
+        [this, onDone, previousFp] (AIClient::PatternResponse r)
+        {
+            if (! r.ok)
+            {
+                recordClaudeFailure (r.error.isNotEmpty() ? r.error
+                                                          : juce::String ("Claude request failed."),
+                                     PendingLocalAction::NewIdea);
+                if (onDone) onDone (lastGeneration);
+                return;
+            }
+            recordClaudeSuccess (r.pattern, r.assistantText);
+            if (previousFp.isNotEmpty()
+                && lastHarmonyFp == previousFp)
+            {
+                // Claude returned the same fingerprint after internal retry —
+                // surface as failure rather than pretending it's a new idea.
+                recordClaudeFailure ("Claude returned the same chord progression as the previous idea.",
+                                     PendingLocalAction::NewIdea);
+            }
+            if (onDone) onDone (lastGeneration);
+        });
+}
+
+void AIMidiGenProcessor::varyChordsWithAI (std::function<void (AIClient::PatternResponse)> onDone)
+{
+    auto& chords = parts[(size_t) InstrumentType::Chords];
+    if (chords.notes.empty())
+    {
+        AIClient::PatternResponse r;
+        r.ok = false;
+        r.error = "Generate chords first, then Vary.";
+        if (onDone) juce::MessageManager::callAsync ([onDone, r] { onDone (r); });
+        return;
+    }
+    if (chords.locked)
+    {
+        AIClient::PatternResponse r;
+        r.ok = false;
+        r.error = "Chords are locked — unlock to vary.";
+        if (onDone) juce::MessageManager::callAsync ([onDone, r] { onDone (r); });
+        return;
+    }
+
+    const auto ctx = serializePartAsMidiContext (chords, projectParams);
+    const auto forcedKey = juce::String (formatKeyString (projectParams));
+    juce::String prompt;
+    prompt << "Vary Chords: create a fresh variation of this chord progression.\n"
+           << "HARD LOCKS — preserve exactly:\n"
+           << "  key: " << forcedKey << "\n"
+           << "  genre/style: " << projectParams.genre << "\n"
+           << "  BPM: " << (int) projectParams.bpm << "\n"
+           << "  bars: " << projectParams.bars << "\n"
+           << "Change the harmonic route (degrees, extensions, inversions, rhythm) enough to feel new.\n"
+           << "Include \"progression\" and \"chords\" metadata in the JSON.\n"
+           << "Set JSON instrument to \"chords\".\n\n"
+           << "EXISTING CHORDS TO VARY:\n" << ctx;
+
+    aiClient.setProjectContext (buildProjectContextBrief());
+    aiClient.requestMidiPattern (prompt, forcedKey,
+        [this, onDone] (AIClient::PatternResponse r)
+        {
+            if (r.ok)
+            {
+                juce::String err;
+                applyMidiPattern (r.pattern, err);
+                if (err.isNotEmpty() && ! err.startsWithIgnoreCase ("Applied "))
+                {
+                    r.ok = false;
+                    r.error = err;
+                }
+                else if (r.ok)
+                {
+                    runCritic();
+                    rebuildPreviewSequences();
+                    recordClaudeSuccess (r.pattern, r.assistantText);
+                    r.assistantText = "Generated with Claude — " + r.assistantText;
+                }
+            }
+            if (! r.ok)
+                recordClaudeFailure (r.error.isNotEmpty() ? r.error
+                                                          : juce::String ("Vary chords failed."),
+                                     PendingLocalAction::Lane, InstrumentType::Chords);
+            if (onDone) onDone (r);
+        });
+}
+
+void AIMidiGenProcessor::useLocalGeneratorNow (std::function<void (GenerationReport)> onDone)
+{
+    const auto action = pendingLocalAction;
+    const auto lane = pendingLocalLane;
+    pendingLocalOffer = false;
+    pendingLocalAction = PendingLocalAction::None;
+
+    const juce::String label = "Generated locally — offline fallback chosen";
+    switch (action)
+    {
+        case PendingLocalAction::Lane:
+            generatePartOffline (lane, true, label);
+            break;
+        case PendingLocalAction::NewIdea:
+            (void) rollSeedUntilFingerprintChanges (lastHarmonyFp);
+            generateAllPartsOffline (label);
+            break;
+        case PendingLocalAction::All:
+        case PendingLocalAction::None:
+        default:
+            generateAllPartsOffline (label);
+            break;
+    }
+    if (onDone) onDone (lastGeneration);
+}
+
 void AIMidiGenProcessor::regenerateFromAI (const juce::String& prompt,
                                            std::function<void (AIClient::PatternResponse)> onDone)
 {
@@ -679,7 +1021,7 @@ void AIMidiGenProcessor::transformPartWithAI (InstrumentType t,
     const auto ctx = serializePartAsMidiContext (src, projectParams);
     const auto forcedKey = juce::String (formatKeyString (projectParams));
     aiClient.requestMidiTransform (mode, toString (t), ctx, forcedKey,
-        [this, onDone] (AIClient::PatternResponse r)
+        [this, onDone, t] (AIClient::PatternResponse r)
         {
             if (r.ok)
             {
@@ -700,8 +1042,13 @@ void AIMidiGenProcessor::transformPartWithAI (InstrumentType t,
                 {
                     runCritic();
                     rebuildPreviewSequences();
+                    recordClaudeSuccess (r.pattern, r.assistantText);
                 }
             }
+            if (! r.ok)
+                recordClaudeFailure (r.error.isNotEmpty() ? r.error
+                                                          : juce::String ("Transform failed."),
+                                     PendingLocalAction::Lane, t);
             if (onDone) onDone (r);
         });
 }

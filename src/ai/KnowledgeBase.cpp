@@ -562,4 +562,21 @@ KnowledgeBase::RetrievalResult KnowledgeBase::retrieveForQuery (const juce::Stri
     return result;
 }
 
+juce::String KnowledgeBase::masterPromptText() const
+{
+    for (const auto& doc : docs)
+        if (doc.id.containsIgnoreCase ("master-system")
+            || doc.title.containsIgnoreCase ("master-system")
+            || doc.id.containsIgnoreCase ("master_system"))
+            return doc.body;
+
+    // Fall back to the binary-embedded resource so Claude still receives the
+    // complete Brain even if the knowledge folder was wiped.
+    int size = 0;
+    const auto* data = BinaryData::getNamedResource ("master_system_prompt_md", size);
+    if (data != nullptr && size > 0)
+        return juce::String (data, (size_t) size);
+    return {};
+}
+
 } // namespace aimidi
