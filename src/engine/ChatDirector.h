@@ -402,7 +402,9 @@ inline ChatIntent parseChatIntent (const std::string& message)
 
     if (intent.hasParamChange())
     {
-        intent.action = ChatAction::AdjustOnly;       // "128 bpm", "f minor", "deep house"
+        // "simpler hats" -> tweak the dial AND rebuild just the hats;
+        // "128 bpm" / "f minor" / "deep house" -> param change only.
+        intent.action = hasTargets ? ChatAction::Generate : ChatAction::AdjustOnly;
         return intent;
     }
 

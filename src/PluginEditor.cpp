@@ -575,8 +575,11 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
         "2. Lock any lane you like, reroll the rest.\n"
         "3. Drag a lane (or \"Export all\") straight into your DAW's piano roll.\n"
         "4. \"MIDI DNA\" learns the groove + key of any .mid you load.\n"
-        "5. Or just tell me what you want here — e.g. \"make a darker afro "
-        "house idea at 122\".");
+        "5. Chat commands are instant — \"make a bassline\", \"new kick\", "
+        "\"128 bpm\", \"in F minor\", \"darker\", \"undo\" all run locally with "
+        "zero wait. Type \"help\" for the full list.\n"
+        "6. Anything else is real AI conversation, grounded in your actual "
+        "project (style, key, lanes, critic notes).");
 
     for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
     {

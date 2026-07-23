@@ -256,3 +256,48 @@ Seven improvements across usability, sound, and melody↔chord sync:
   to the cadence degree, 4-bar loops unaffected, cadence bar still
   voice-leads within an octave for all 8 styles) — all green on Linux.
   Full JUCE build on the Mac via install-mac.sh.
+
+---
+
+## Phase 1.7 — Local-first chat director (2026-07-22)
+
+The chat feature was slow and unreliable because EVERY message — even
+"make it faster" — did a full network round-trip to the LLM and asked it
+to type raw MIDI note JSON. Redesigned as a two-layer director:
+
+**Layer 1 — instant local commands (0 ms, no network).**
+New JUCE-free `src/engine/ChatDirector.h`: `parseChatIntent()` maps chat
+text onto a `ChatIntent` (action + target lanes/drum pieces + param
+changes). Recognised vocabulary:
+- generate/vary verbs + lane words (bass, melody/lead/hook, chords/keys,
+  pad, arp, counter, drums/beat) and drum pieces (kick, snare, clap,
+  open/closed hats, ride, shaker, rim, congas, percussion)
+- "generate everything", "new idea"/"surprise me", "undo", "help"
+- tempo ("128 bpm", "at 122", "faster"/"slower"), bars ("8 bars")
+- key ("in f# minor", "eb dorian", bare mode names, "darker"/"brighter")
+- style-preset names/keywords (whole-word matched; lane-colliding
+  keywords like "bassline" are excluded so they never mis-switch genre)
+- feel dials: harder/chill (energy), busier/simpler (density),
+  swing/shuffle, tight/quantized vs loose/human (humanize)
+`AIMidiGenProcessor::tryLocalChatCommand()` executes the intent through
+the deterministic engine (fresh seed, undo snapshot, critic pass) and
+replies instantly ("⚡ style -> Afro House, regenerated bass + kick.").
+Param-only changes regenerate unlocked lanes when musical (key/style/
+bars/dials); BPM-only just retimes playback.
+
+**Layer 2 — the AI only for real conversation, now grounded.**
+Questions ("how does…", "why does…"), advice-seeking ("feedback",
+"suggestions" — never regenerates even when a lane is named), and
+anything unrecognised falls through to the LLM. Before every AI turn the
+processor injects `buildProjectContextBrief()` — style, key, BPM, bars,
+feel dials, per-lane note counts + lock/mute state, drum-kit contents,
+DNA status, last critic pass — via `AIClient::setProjectContext()`, so
+answers reference the actual project instead of guessing. The same brief
+rides along on the AI MIDI-generation path.
+
+### Validation
+- Harness now versioned at `tests/EngineTests.cpp` (plain g++, no JUCE):
+  30+ intent parses asserted — lanes, pieces, tempo/bars/key/genre/dials,
+  question vs command routing, "a minor" article disambiguation,
+  advice-seeking safety, opposing-word cancellation. All green on Linux;
+  full JUCE build on the Mac via install-mac.sh.
