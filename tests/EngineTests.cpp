@@ -137,8 +137,9 @@ int main()
         auto rep = reviewArrangement (parts, kit, p);
         assert (rep.fixes >= 2); // bass clamp + kick clash at minimum
         const auto& bassNotes = parts[(size_t) InstrumentType::Bass].notes;
+        assert (bassNotes.size() == 1); // clashing note on the kick was dropped
         assert (bassNotes[0].pitch >= 28 && bassNotes[0].pitch <= 55);
-        assert (bassNotes[1].startBeats > 0.2); // nudged off the kick
+        assert (bassNotes[0].startBeats > 0.2); // remaining note is off the kick
 
         // melody strong beat now sits on a chord tone (snapped or already ok)
         {

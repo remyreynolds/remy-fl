@@ -269,8 +269,12 @@ GeneratedPart MidiGenerator::generateMelody (const MusicParams& p)
                 // out, then pulls back around.
                 note = theory::snapToChord (noteAt (curIdx), *nextChord);
                 curIdx = nearestIdx (note);
-                part.notes.push_back ({ bar * 4.0 + s * stepBeats,
-                                        stepBeats * 3.0, note, 0.75f });
+                // Ring, but never past the loop boundary — a tail that spills
+                // over the end overlaps the loop's own downbeat on repeat.
+                const double start  = bar * 4.0 + s * stepBeats;
+                const double maxLen = p.bars * 4.0 - start;
+                part.notes.push_back ({ start,
+                                        std::min (stepBeats * 3.0, maxLen), note, 0.75f });
                 continue;
             }
 
@@ -384,7 +388,10 @@ GeneratedPart MidiGenerator::generateArp (const MusicParams& p)
         if (chord.empty()) continue;
         const int idx = s % (int) chord.size();
         const int oct = 12 + ((s / (int) chord.size()) % 2) * 12;
-        part.notes.push_back ({ s * step, step * 0.9, chord[(size_t) idx] + oct, 0.7f });
+        // Accent the downbeat 1/16s so the arp pulses with the groove
+        // instead of sounding like a flat sequencer run.
+        const float vel = (s % 4 == 0) ? 0.8f : 0.6f;
+        part.notes.push_back ({ s * step, step * 0.9, chord[(size_t) idx] + oct, vel });
     }
     return part;
 }
@@ -396,7 +403,9 @@ GeneratedPart MidiGenerator::generatePad (const MusicParams& p)
     const auto& st = findStyle (p.genre);
     auto part = generateChordsWithMode (p, ChordMode::Sustained,
                                         std::clamp (st.chordTones, 3, 5));
-    for (auto& n : part.notes) { n.lengthBeats = 4.0; n.velocity = 0.55f; }
+    // 3.95 (not a full 4.0) so back-to-back bars retrigger cleanly instead
+    // of note-off/note-on landing on the exact same tick in the DAW.
+    for (auto& n : part.notes) { n.lengthBeats = 3.95; n.velocity = 0.55f; }
     return part;
 }
 
@@ -423,6 +432,11 @@ GeneratedPart MidiGenerator::generateDrums (const MusicParams& p)
 std::array<GeneratedPart, (size_t) DrumPiece::NumPieces>
     MidiGenerator::generateDrumKit (const MusicParams& p)
 {
+    // Seed here too: this is a public entry point (UI piece-reroll, critic),
+    // not only reached via generate() — without this the kit was
+    // non-deterministic and generateDrumPiece couldn't reproduce the kit.
+    rng.seed ((p.seed != 0 ? p.seed : std::random_device{}()) ^ 0x517cc1b7u);
+
     std::array<GeneratedPart, (size_t) DrumPiece::NumPieces> kit;
     for (auto& g : kit) g.type = InstrumentType::Drums;
 
@@ -515,7 +529,7 @@ std::array<GeneratedPart, (size_t) DrumPiece::NumPieces>
                 if (rand01() > ghostProb) continue;
                 kit[(size_t) ghostPiece].notes.push_back (
                     { b0 + s * 0.25, 0.08, ghostNote,
-                      0.12f + rand01() * 0.1f });
+                      0.20f + rand01() * 0.15f });
             }
         }
     }

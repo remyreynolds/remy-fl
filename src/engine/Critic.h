@@ -4,6 +4,7 @@
 #include "MusicTheory.h"
 #include "SongPlan.h"
 #include "StylePresets.h"
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <string>
@@ -89,14 +90,21 @@ namespace critic
          || st.bassStyle == BassStyle::GarageSub)
             return;
 
-        for (auto& b : bass.notes)
-            for (const auto& k : kick.notes)
-                if (std::abs (b.startBeats - k.startBeats) < 0.06)
+        // Drop the clashing note rather than shoving it to the next 1/16 —
+        // moving it used to double up with a note already sitting there,
+        // producing a smeared unison 16th instead of a cleaner groove.
+        const auto before = bass.notes.size();
+        bass.notes.erase (
+            std::remove_if (bass.notes.begin(), bass.notes.end(),
+                [&kick] (const NoteEvent& b)
                 {
-                    b.startBeats = k.startBeats + 0.25;
-                    ++rep.fixes;
-                    break;
-                }
+                    for (const auto& k : kick.notes)
+                        if (std::abs (b.startBeats - k.startBeats) < 0.06)
+                            return true;
+                    return false;
+                }),
+            bass.notes.end());
+        rep.fixes += (int) (before - bass.notes.size());
     }
 
     /** Flag (don't silently mangle) arrangement-level oddities. */
