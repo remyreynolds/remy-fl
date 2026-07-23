@@ -78,6 +78,10 @@ public:
     KnowledgeBase& knowledge() { return knowledgeBase; }
     const KnowledgeBase& knowledge() const { return knowledgeBase; }
 
+    /** Live "PROJECT STATE" brief injected into every AI turn so answers are
+        grounded in what's actually loaded (set by the processor each turn). */
+    void setProjectContext (const juce::String& brief) { projectContext = brief; }
+
     /** True when the user is asking to create / transform MIDI (vs just chatting). */
     static bool looksLikeMidiGenerateRequest (const juce::String& prompt);
 
@@ -130,6 +134,7 @@ private:
     juce::String claudeModel { "claude-sonnet-5" };
     juce::String openAiModel { "gpt-4o" };
     KnowledgeBase knowledgeBase;
+    juce::String projectContext; // live plugin snapshot for grounding
     std::vector<Turn> history; // short conversational memory
 
     void pushHistory (bool fromUser, const juce::String& text);

@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "engine/Critic.h"
+#include "engine/ChatDirector.h"
 #include <algorithm>
 #include <cmath>
 
@@ -725,6 +726,19 @@ juce::File AIMidiGenProcessor::exportAllPartsMidiFile() const
 void AIMidiGenProcessor::handleChatTurn (const juce::String& prompt,
                                          std::function<void (AIClient::TurnResponse)> onDone)
 {
+    // Layer 1 — instant local commands: no network, no LLM, ~0 ms.
+    {
+        AIClient::TurnResponse local;
+        if (tryLocalChatCommand (prompt, local))
+        {
+            if (onDone) onDone (std::move (local));
+            return;
+        }
+    }
+
+    // Layer 2 — real conversation: ground the AI in the live project state.
+    aiClient.setProjectContext (buildProjectContextBrief());
+
     const auto forcedKey = juce::String (formatKeyString (projectParams));
     aiClient.handleUserTurn (prompt, forcedKey,
         [this, prompt, onDone] (AIClient::TurnResponse r)
@@ -756,6 +770,216 @@ void AIMidiGenProcessor::handleChatTurn (const juce::String& prompt,
 
             if (onDone) onDone (std::move (r));
         });
+}
+
+//==============================================================================
+bool AIMidiGenProcessor::tryLocalChatCommand (const juce::String& text,
+                                              AIClient::TurnResponse& out)
+{
+    const auto intent = parseChatIntent (text.toStdString());
+    using CA = ChatAction;
+
+    if (intent.action == CA::None || intent.action == CA::Conversation)
+        return false; // real conversation -> AI
+
+    out.ok = true;
+
+    if (intent.action == CA::Help)
+    {
+        out.assistantText = juce::String::fromUTF8 (chatDirectorHelpText());
+        return true;
+    }
+
+    if (intent.action == CA::Undo)
+    {
+        if (undoLastGeneration())
+        {
+            out.generatedMidi = true; // tells the editor to refresh the roll
+            out.assistantText = "Undone - restored the previous take.";
+        }
+        else
+            out.assistantText = "Nothing to undo yet.";
+        return true;
+    }
+
+    juce::StringArray done;
+
+    // ---- Parameter changes first, so any generation below uses them ----
+    if (! intent.genre.empty())
+    {
+        (void) autoDetectGenreFromText (juce::String (intent.genre)); // timbres + mix
+        projectParams.genre = intent.genre;      // keep the specific style name
+        const auto& st = findStyle (intent.genre);
+        projectParams.swing = st.swing;
+        projectParams.scale = intent.scale.empty() ? st.scale : intent.scale;
+        if (intent.bpm <= 0.0 && intent.bpmDelta == 0.0)
+            setBpm (st.bpm);
+        done.add ("style -> " + juce::String (intent.genre));
+    }
+    if (intent.bpm > 0.0)
+    {
+        setBpm (intent.bpm);
+        done.add ("tempo -> " + juce::String ((int) projectParams.bpm) + " BPM");
+    }
+    if (intent.bpmDelta != 0.0)
+    {
+        setBpm (projectParams.bpm + intent.bpmDelta);
+        done.add ("tempo -> " + juce::String ((int) projectParams.bpm) + " BPM");
+    }
+    if (! intent.root.empty())  projectParams.root  = intent.root;
+    if (! intent.scale.empty()) projectParams.scale = intent.scale;
+    if (! intent.root.empty() || (! intent.scale.empty() && intent.genre.empty()))
+        done.add ("key -> " + juce::String (formatKeyString (projectParams)));
+    if (intent.bars > 0)
+    {
+        projectParams.bars = intent.bars;
+        done.add (juce::String (intent.bars) + " bars");
+    }
+
+    auto nudge = [&done] (float& v, float delta, const char* name)
+    {
+        if (delta == 0.0f) return;
+        v = juce::jlimit (0.0f, 1.0f, v + delta);
+        done.add (juce::String (name) + (delta > 0.0f ? " up" : " down"));
+    };
+    nudge (projectParams.energy,      intent.energyDelta,   "energy");
+    nudge (projectParams.noteDensity, intent.densityDelta,  "density");
+    nudge (projectParams.swing,       intent.swingDelta,    "swing");
+    nudge (projectParams.humanize,    intent.humanizeDelta, "humanize");
+
+    // ---- Then the generation action ----
+    auto freshSeed = [this]
+    {
+        projectParams.seed =
+            1u + (unsigned int) juce::Random::getSystemRandom().nextInt (0x7fffffff);
+    };
+
+    switch (intent.action)
+    {
+        case CA::NewIdea:
+        case CA::GenerateAll:
+            freshSeed();
+            generateAllParts(); // one undo snapshot, skips locked lanes
+            out.generatedMidi = true;
+            done.add (intent.action == CA::NewIdea ? "rolled a fresh idea"
+                                                   : "regenerated all unlocked lanes");
+            break;
+
+        case CA::Generate:
+        case CA::Vary:
+        {
+            pushUndoSnapshot();
+            freshSeed();
+            juce::StringArray names;
+            for (auto lane : intent.lanes)
+            {
+                if (lane == InstrumentType::Drums)
+                {
+                    if (intent.pieces.empty())
+                    {
+                        generateDrumKit (false);
+                        names.add ("drums");
+                    }
+                    else
+                    {
+                        for (auto piece : intent.pieces)
+                        {
+                            if (drumKit[(size_t) piece].locked)
+                            {
+                                names.add (juce::String (toString (piece)).toLowerCase()
+                                           + " (locked, skipped)");
+                                continue;
+                            }
+                            generateDrumPiece (piece, false);
+                            names.add (juce::String (toString (piece)).toLowerCase());
+                        }
+                    }
+                }
+                else if (parts[(size_t) lane].locked)
+                {
+                    names.add (juce::String (toString (lane)).toLowerCase()
+                               + " (locked, skipped)");
+                }
+                else
+                {
+                    generatePart (lane, false);
+                    names.add (juce::String (toString (lane)).toLowerCase());
+                }
+            }
+            out.generatedMidi = true;
+            done.add ((intent.action == CA::Vary ? "varied " : "regenerated ")
+                      + names.joinIntoString (" + "));
+            break;
+        }
+
+        case CA::AdjustOnly:
+            if (intent.paramChangeWantsRegen())
+            {
+                generateAllParts(); // pushes its own undo snapshot
+                out.generatedMidi = true;
+                done.add ("regenerated unlocked lanes to match");
+            }
+            else
+            {
+                rebuildPreviewSequences(); // BPM-only: playback follows live
+            }
+            break;
+
+        default:
+            break;
+    }
+
+    // (The editor shows the critic summary separately after generation.)
+    out.assistantText = juce::String (juce::CharPointer_UTF8 ("\xe2\x9a\xa1 "))
+                      + done.joinIntoString (", ") + ".";
+    return true;
+}
+
+juce::String AIMidiGenProcessor::buildProjectContextBrief() const
+{
+    juce::String s;
+    s << "Style: "  << juce::String (projectParams.genre)
+      << " | Key: " << juce::String (formatKeyString (projectParams))
+      << " | "      << juce::String ((int) projectParams.bpm) << " BPM"
+      << " | "      << projectParams.bars << " bars\n";
+    s << "Feel dials (0..1): energy " << juce::String (projectParams.energy, 2)
+      << ", density "  << juce::String (projectParams.noteDensity, 2)
+      << ", swing "    << juce::String (projectParams.swing, 2)
+      << ", humanize " << juce::String (projectParams.humanize, 2) << "\n";
+
+    s << "Lanes:";
+    for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
+    {
+        if ((InstrumentType) t == InstrumentType::Drums)
+            continue;
+        const auto& p = parts[(size_t) t];
+        s << " " << toString ((InstrumentType) t) << "="
+          << (p.notes.empty() ? juce::String ("empty")
+                              : juce::String ((int) p.notes.size()) + " notes");
+        if (p.locked) s << " [locked]";
+        if (p.muted)  s << " [muted]";
+        s << ";";
+    }
+
+    s << "\nDrum kit:";
+    bool anyDrums = false;
+    for (int i = 0; i < (int) DrumPiece::NumPieces; ++i)
+    {
+        const auto& p = drumKit[(size_t) i];
+        if (p.notes.empty())
+            continue;
+        anyDrums = true;
+        s << " " << toString ((DrumPiece) i) << "=" << (int) p.notes.size() << " hits"
+          << (p.locked ? " [locked]" : "") << ";";
+    }
+    if (! anyDrums)
+        s << " empty";
+
+    if (hasDna())
+        s << "\nMIDI DNA: groove/harmony learned from a user MIDI file is active.";
+    if (criticSummary.isNotEmpty())
+        s << "\nLast critic pass: " << criticSummary;
+    return s;
 }
 
 //==============================================================================

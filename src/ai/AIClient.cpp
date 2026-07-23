@@ -530,6 +530,14 @@ void AIClient::sendChatMessage (const juce::String& userPrompt, ChatCallback cal
     const auto system = buildChatSystemPrompt();
 
     juce::String user = prompt;
+    if (projectContext.isNotEmpty())
+    {
+        user << "\n\n===== PROJECT STATE (live plugin snapshot) =====\n"
+             << projectContext
+             << "\n===== END PROJECT STATE =====\n"
+             << "Ground every answer in this snapshot — refer to the actual "
+                "style, key, BPM, and lanes above instead of guessing.";
+    }
     if (retrieval.context.isNotEmpty())
     {
         user << "\n\n===== MUSIC THEORY REFERENCES (shared brain knowledge) =====\n"
@@ -652,8 +660,9 @@ void AIClient::requestMidiPattern (const juce::String& userPrompt,
     const auto knowledgeCtx = retrieval.context;
     const auto matchedDocs = retrieval.matchedDocs;
     const int docsUsed = matchedDocs.size();
+    const auto projCtx = projectContext; // copy for thread safety
 
-    juce::Thread::launch ([this, prompt, lockKey, knowledgeCtx, matchedDocs, docsUsed, callback]
+    juce::Thread::launch ([this, prompt, lockKey, knowledgeCtx, projCtx, matchedDocs, docsUsed, callback]
     {
         PatternResponse resp;
         resp.knowledgeDocsUsed = docsUsed;
@@ -686,6 +695,14 @@ void AIClient::requestMidiPattern (const juce::String& userPrompt,
         if (lockKey.isNotEmpty())
             user << "\n\n[Project key lock: " << lockKey
                  << " — generate ONLY in this key.]";
+
+        if (projCtx.isNotEmpty())
+        {
+            user << "\n\n===== PROJECT STATE (live plugin snapshot) =====\n"
+                 << projCtx
+                 << "\n===== END PROJECT STATE =====\n"
+                 << "Compose to complement what is already loaded above.";
+        }
 
         if (knowledgeCtx.isNotEmpty())
         {

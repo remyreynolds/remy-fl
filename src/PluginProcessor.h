@@ -71,9 +71,19 @@ public:
     /** Multi-track temp MIDI of all non-empty parts. */
     juce::File exportAllPartsMidiFile() const;
 
-    /** Chat box: converse by default; only generate MIDI when the user asks to make it. */
+    /** Chat box: local-first. Commands ("make a bassline", "128 bpm", "undo")
+        execute instantly via the deterministic engine — no network. Only real
+        conversation falls through to the AI, grounded with a live project brief. */
     void handleChatTurn (const juce::String& prompt,
                          std::function<void (AIClient::TurnResponse)> onDone);
+
+    /** Try to execute the message as an instant local command (ChatDirector).
+        Returns true if handled; fills `out` with the reply. */
+    bool tryLocalChatCommand (const juce::String& text, AIClient::TurnResponse& out);
+
+    /** Compact "PROJECT STATE" snapshot (style, key, BPM, lanes, critic) used
+        to ground every AI chat turn. */
+    juce::String buildProjectContextBrief() const;
 
     // ---- Drum kit: kick/snare/clap/closed hat/open hat as separate,
     //      independently generatable/lockable/mutable/draggable parts. ----
