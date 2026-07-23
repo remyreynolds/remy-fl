@@ -58,7 +58,11 @@ AIClient::AIClient()
         openAiApiKey = props.getValue ("openAiApiKey");
     }
 
-    claudeModel = props.getValue ("claudeModel", "claude-sonnet-5");
+    claudeModel = props.getValue ("claudeModel", "claude-sonnet-4-5");
+    // Migrate saved settings that still point at old invalid model ids.
+    if (claudeModel == "claude-sonnet-5" || claudeModel == "claude-opus-4-8"
+        || claudeModel == "claude-sonnet-4-6")
+        claudeModel = "claude-sonnet-4-5";
     openAiModel = props.getValue ("openAiModel", "gpt-4o");
 }
 
@@ -360,17 +364,23 @@ juce::String AIClient::extractOpenAiTextContent (const juce::String& openAiRaw)
     return {};
 }
 
-AIClient::LlmHttpResult AIClient::postChatCompletion (const juce::String& system,
+AIClient::Endpoint AIClient::endpointSnapshot() const
+{
+    return { provider, activeApiKey(), activeModel(), providerDisplayName() };
+}
+
+AIClient::LlmHttpResult AIClient::postChatCompletion (const Endpoint& ep,
+                                                      const juce::String& system,
                                                       const juce::String& user,
-                                                      int maxTokens) const
+                                                      int maxTokens)
 {
     LlmHttpResult result;
-    const auto key = activeApiKey();
-    const auto mdl = activeModel();
+    const auto& key = ep.key;
+    const auto& mdl = ep.model;
 
     if (key.isEmpty())
     {
-        result.error = "Add your " + providerDisplayName() + " API key first (header field).";
+        result.error = "Add your " + ep.displayName + " API key first (header field).";
         return result;
     }
 
@@ -378,7 +388,7 @@ AIClient::LlmHttpResult AIClient::postChatCompletion (const juce::String& system
     juce::URL url;
     juce::String headers;
 
-    if (provider == Provider::OpenAI)
+    if (ep.provider == Provider::OpenAI)
     {
         json = juce::JSON::toString (buildOpenAiRequestBody (system, user, mdl, maxTokens));
         url = juce::URL ("https://api.openai.com/v1/chat/completions").withPOSTData (json);
@@ -405,7 +415,7 @@ AIClient::LlmHttpResult AIClient::postChatCompletion (const juce::String& system
     auto stream = url.createInputStream (options);
     if (stream == nullptr)
     {
-        result.error = provider == Provider::OpenAI
+        result.error = ep.provider == Provider::OpenAI
                            ? "Network error: could not reach api.openai.com."
                            : "Network error: could not reach api.anthropic.com.";
         return result;
@@ -419,13 +429,39 @@ AIClient::LlmHttpResult AIClient::postChatCompletion (const juce::String& system
         return result;
     }
 
-    result.text = provider == Provider::OpenAI
+    result.text = ep.provider == Provider::OpenAI
                       ? extractOpenAiTextContent (raw)
                       : extractTextContent (raw);
     if (result.text.isEmpty())
     {
-        result.error = providerDisplayName() + " returned an empty response.";
+        result.error = ep.displayName + " returned an empty response.";
         return result;
+    }
+
+    // Detect a truncated reply (hit the token cap) — a half-written MIDI
+    // JSON would otherwise surface as a confusing "could not parse" error.
+    {
+        const auto top = juce::JSON::parse (raw);
+        juce::String stopReason;
+        if (ep.provider == Provider::OpenAI)
+        {
+            if (auto* choices = top.getProperty ("choices", {}).getArray();
+                choices != nullptr && ! choices->isEmpty())
+                stopReason = choices->getReference (0)
+                                 .getProperty ("finish_reason", {}).toString();
+            if (stopReason == "length") stopReason = "max_tokens";
+        }
+        else
+        {
+            stopReason = top.getProperty ("stop_reason", {}).toString();
+        }
+
+        if (stopReason == "max_tokens")
+        {
+            result.error = ep.displayName + " reply was cut off at the token limit. "
+                           "Try fewer bars or fewer parts.";
+            return result;
+        }
     }
 
     result.ok = true;
@@ -444,14 +480,15 @@ juce::String AIClient::describeHttpError (int statusCode, const juce::String& bo
     if (detail.isEmpty())
         detail = body.substring (0, 240);
 
+    // Provider-neutral wording: this path serves both Claude and OpenAI.
     if (statusCode == 401 || statusCode == 403)
-        return "Invalid or unauthorized API key. Check your Anthropic key.";
+        return "Invalid or unauthorized API key. Check the key in the header field.";
     if (statusCode == 429)
-        return "Rate limited by Anthropic. Wait a moment and try again.";
+        return "Rate limited by the AI provider. Wait a moment and try again.";
     if (statusCode == 400)
-        return "Bad request to Claude" + (detail.isNotEmpty() ? (": " + detail) : ".");
+        return "Bad request to the model" + (detail.isNotEmpty() ? (": " + detail) : ".");
     if (statusCode >= 500)
-        return "Anthropic server error (HTTP " + juce::String (statusCode) + "). Try again.";
+        return "AI provider server error (HTTP " + juce::String (statusCode) + "). Try again.";
 
     return "HTTP " + juce::String (statusCode)
          + (detail.isNotEmpty() ? (": " + detail) : ".");
@@ -567,8 +604,9 @@ void AIClient::sendChatMessage (const juce::String& userPrompt, ChatCallback cal
     const auto useClaudeHistory = provider == Provider::Claude;
     const auto bodyVar = useClaudeHistory ? buildChatMessagesBody (system, user)
                                           : juce::var();
+    const auto ep = endpointSnapshot(); // by value: worker must not read live members
 
-    juce::Thread::launch ([this, system, finalUser, user, useClaudeHistory, bodyVar, matched, callback]
+    juce::Thread::launch ([system, finalUser, user, useClaudeHistory, bodyVar, matched, ep, callback]
     {
         ChatResponse resp;
         resp.matchedDocTitles = matched;
@@ -577,7 +615,7 @@ void AIClient::sendChatMessage (const juce::String& userPrompt, ChatCallback cal
         if (useClaudeHistory)
         {
             // Use the prebuilt Anthropic history body path.
-            const auto key = activeApiKey();
+            const auto& key = ep.key;
             const auto json = juce::JSON::toString (bodyVar);
             juce::URL url ("https://api.anthropic.com/v1/messages");
             url = url.withPOSTData (json);
@@ -615,7 +653,7 @@ void AIClient::sendChatMessage (const juce::String& userPrompt, ChatCallback cal
         }
         else
         {
-            http = postChatCompletion (system, finalUser, 1024);
+            http = postChatCompletion (ep, system, finalUser, 1024);
         }
 
         if (! http.ok)
@@ -657,23 +695,24 @@ void AIClient::requestMidiPattern (const juce::String& userPrompt,
 
     const auto prompt = userPrompt.trim();
     const auto lockKey = forcedKey.trim();
-    auto retrieval = knowledgeBase.retrieveForQuery (prompt);
+    auto retrieval = knowledgeBase.retrieveForQuery (prompt, 14000, true); // MIDI path: bias groove docs
     const auto knowledgeCtx = retrieval.context;
     const auto matchedDocs = retrieval.matchedDocs;
     const int docsUsed = matchedDocs.size();
     const auto projCtx = projectContext; // copy for thread safety
     const auto recentProgressions = recentProgressionsForPrompt();
     const auto variationNonce = juce::Uuid().toString();
+    const auto ep = endpointSnapshot();               // by value for the worker
+    const auto masterBrain = knowledgeBase.masterPromptText(); // read on message thread
 
     juce::Thread::launch ([this, prompt, lockKey, knowledgeCtx, projCtx, matchedDocs,
-                           docsUsed, recentProgressions, variationNonce, callback]
+                           docsUsed, recentProgressions, variationNonce, ep, masterBrain, callback]
     {
         PatternResponse resp;
         resp.knowledgeDocsUsed = docsUsed;
         resp.matchedDocTitles = matchedDocs;
 
         juce::String system;
-        const auto masterBrain = knowledgeBase.masterPromptText();
         if (masterBrain.trim().isNotEmpty())
         {
             system << "===== MASTER SYSTEM PROMPT (bundled Brain) =====\n"
@@ -739,7 +778,7 @@ void AIClient::requestMidiPattern (const juce::String& userPrompt,
                     "those rules and the project key/BPM/bars.";
         }
 
-        auto http = postChatCompletion (system, user, 8192);
+        auto http = postChatCompletion (ep, system, user, 8192);
         if (! http.ok)
         {
             resp.ok = false;
@@ -765,7 +804,7 @@ void AIClient::requestMidiPattern (const juce::String& userPrompt,
             auto retryUser = user + "\n\nREJECTED: that chord progression matches a recent result. "
                 "Compose a genuinely different progression now. Change the functional root motion "
                 "and at least two of: chord rhythm, extensions, inversions, or voice-leading contour.";
-            http = postChatCompletion (system, retryUser, 8192);
+            http = postChatCompletion (ep, system, retryUser, 8192);
             if (! http.ok)
             {
                 resp.ok = false;
@@ -867,14 +906,16 @@ void AIClient::sendPrompt (const juce::String& userPrompt,
                 << " genre=" << current.genre << " bpm=" << (int) current.bpm
                 << " bars=" << current.bars << ". Request: " << userPrompt;
 
-    juce::Thread::launch ([this, fb, contextLine, callback]
+    const auto ep = endpointSnapshot(); // by value for the worker
+
+    juce::Thread::launch ([fb, contextLine, ep, callback]
     {
         Response resp;
-        auto http = postChatCompletion (buildLegacySystemPrompt(), contextLine, 1024);
+        auto http = postChatCompletion (ep, buildLegacySystemPrompt(), contextLine, 1024);
         if (http.ok)
         {
             // parseLegacyResponse expects Anthropic envelope; wrap plain text as content.
-            if (provider == Provider::OpenAI)
+            if (ep.provider == Provider::OpenAI)
             {
                 auto* block = new juce::DynamicObject();
                 block->setProperty ("type", "text");

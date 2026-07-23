@@ -457,7 +457,8 @@ int KnowledgeBase::scoreChunk (const Chunk& chunk, const juce::StringArray& keyw
 }
 
 KnowledgeBase::RetrievalResult KnowledgeBase::retrieveForQuery (const juce::String& query,
-                                                                int maxChars) const
+                                                                int maxChars,
+                                                                bool forGeneration) const
 {
     RetrievalResult result;
     if (docs.empty())
@@ -485,11 +486,16 @@ KnowledgeBase::RetrievalResult KnowledgeBase::retrieveForQuery (const juce::Stri
     addAlias ("groove", "house");
     addAlias ("bassline", "bass");
     addAlias ("drum", "kick");
-    // Always bias toward the "how to sound good" guide when generating.
-    keywords.addIfNotAlreadyThere ("good");
-    keywords.addIfNotAlreadyThere ("sound");
-    keywords.addIfNotAlreadyThere ("loop");
-    keywords.addIfNotAlreadyThere ("groove");
+    // Bias toward the "how to sound good" guide — but only when actually
+    // generating MIDI. Plain conversation shouldn't drag groove docs into
+    // every unrelated question.
+    if (forGeneration)
+    {
+        keywords.addIfNotAlreadyThere ("good");
+        keywords.addIfNotAlreadyThere ("sound");
+        keywords.addIfNotAlreadyThere ("loop");
+        keywords.addIfNotAlreadyThere ("groove");
+    }
 
     struct Scored { int score; Chunk chunk; };
     std::vector<Scored> scored;
@@ -517,14 +523,16 @@ KnowledgeBase::RetrievalResult KnowledgeBase::retrieveForQuery (const juce::Stri
                [] (const Scored& a, const Scored& b) { return a.score > b.score; });
 
     juce::String out;
-    out << "===== MASTER SYSTEM PROMPT (always obey) =====\n";
 
-    // Always inject the master prompt first when present.
+    // Inject the master prompt first when present. The header is only
+    // written together with a body — an empty "MASTER (always obey)" banner
+    // with nothing under it just confuses the model.
     for (auto& doc : docs)
     {
         if (doc.id.containsIgnoreCase ("master-system") || doc.title.containsIgnoreCase ("master-system"))
         {
-            out << doc.body.trim() << "\n===== END MASTER =====\n\n";
+            out << "===== MASTER SYSTEM PROMPT (always obey) =====\n"
+                << doc.body.trim() << "\n===== END MASTER =====\n\n";
             result.matchedDocs.addIfNotAlreadyThere (doc.title);
             break;
         }

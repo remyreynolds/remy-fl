@@ -141,7 +141,7 @@ private:
     juce::String anthropicApiKey;
     juce::String openAiApiKey;
     bool loadedFromEnv = false;
-    juce::String claudeModel { "claude-sonnet-5" };
+    juce::String claudeModel { "claude-sonnet-4-5" };
     juce::String openAiModel { "gpt-4o" };
     KnowledgeBase knowledgeBase;
     juce::String projectContext; // live plugin snapshot for grounding
@@ -153,11 +153,22 @@ private:
     juce::var buildChatMessagesBody (const juce::String& system,
                                      const juce::String& latestUserWithRefs) const;
 
+    /** Immutable by-value snapshot of provider/key/model, captured on the
+        message thread BEFORE launching a worker — background requests must
+        never read the live members while the UI can mutate them. */
+    struct Endpoint
+    {
+        Provider provider = Provider::Claude;
+        juce::String key, model, displayName;
+    };
+    Endpoint endpointSnapshot() const;
+
     juce::String activeApiKey() const;
     juce::String activeModel() const;
-    LlmHttpResult postChatCompletion (const juce::String& system,
-                                      const juce::String& user,
-                                      int maxTokens) const;
+    static LlmHttpResult postChatCompletion (const Endpoint& ep,
+                                             const juce::String& system,
+                                             const juce::String& user,
+                                             int maxTokens);
 
     static juce::String buildChatSystemPrompt();
     static juce::String buildLegacySystemPrompt();

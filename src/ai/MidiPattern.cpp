@@ -257,11 +257,9 @@ bool parseNoteObject (const juce::var& n, PatternNote& out, juce::String& error)
         error = "durationBeats must be a finite number > 0.";
         return false;
     }
-    if (vel < 1 || vel > 127)
-    {
-        error = "velocity must be 1–127 (got " + juce::String (vel) + ").";
-        return false;
-    }
+    // Clamp instead of rejecting: one out-of-range velocity from the model
+    // shouldn't throw away an otherwise good multi-part pattern.
+    vel = juce::jlimit (1, 127, vel);
 
     out.pitchName = pitch;
     out.pitchMidi = midi;

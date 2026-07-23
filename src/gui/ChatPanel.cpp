@@ -150,7 +150,7 @@ ChatPanel::ChatPanel()
 
     modelLabel.setFont (CustomLookAndFeel::font (11.5f));
     modelLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
-    modelLabel.setText ("claude-sonnet-5", juce::dontSendNotification);
+    modelLabel.setText ("claude-sonnet-4-5", juce::dontSendNotification);
     addAndMakeVisible (modelLabel);
 
     docsLabel.setFont (CustomLookAndFeel::font (11.0f));

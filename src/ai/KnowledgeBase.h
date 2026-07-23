@@ -45,9 +45,12 @@ public:
         juce::StringArray matchedDocs;  // doc titles that contributed
     };
 
-    /** Pick the most relevant chunks for a style/theory query. */
+    /** Pick the most relevant chunks for a style/theory query.
+        forGeneration adds "how to sound good / groove / loop" bias keywords —
+        only wanted on the MIDI-generation path, not plain conversation. */
     RetrievalResult retrieveForQuery (const juce::String& query,
-                                      int maxChars = 14000) const;
+                                      int maxChars = 14000,
+                                      bool forGeneration = false) const;
 
     /** Convenience: context string only. */
     juce::String buildContextForQuery (const juce::String& query,

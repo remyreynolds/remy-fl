@@ -1198,9 +1198,9 @@ void AIMidiGenEditor::refreshProviderUi()
     }
     else
     {
-        modelCombo.addItem ("claude-sonnet-5", 1);
-        modelCombo.addItem ("claude-opus-4-8", 2);
-        modelCombo.addItem ("claude-sonnet-4-6", 3);
+        modelCombo.addItem ("claude-sonnet-4-5", 1);
+        modelCombo.addItem ("claude-opus-4-1", 2);
+        modelCombo.addItem ("claude-haiku-4-5", 3);
         selected = processor.ai().getClaudeModel();
     }
 
