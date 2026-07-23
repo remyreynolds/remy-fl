@@ -23,6 +23,15 @@ struct SongPlan
     std::vector<std::vector<int>> chords;  // voice-led MIDI pitches per bar
 };
 
+/** Cadence degree for the final bar of an 8-bar phrase: prefer the
+    dominant-function 5th degree (index 4); if the progression already ends
+    there, fall back to the subdominant (index 3). Deterministic — the whole
+    plan must be reproducible from MusicParams alone. */
+inline int cadenceDegree (const std::array<int, 4>& progression)
+{
+    return progression[3] == 4 ? 3 : 4;
+}
+
 inline SongPlan buildSongPlan (const MusicParams& p, int tones)
 {
     const auto& st   = findStyle (p.genre);
@@ -35,7 +44,14 @@ inline SongPlan buildSongPlan (const MusicParams& p, int tones)
 
     for (int bar = 0; bar < p.bars; ++bar)
     {
-        const int deg = st.progression[(size_t) (bar % 4)];
+        // A/B phrase structure: the 4-bar progression repeats, but the final
+        // bar of every 8-bar phrase substitutes a cadential turnaround chord
+        // so longer loops breathe (tension into the next phrase) instead of
+        // looping identically.
+        int deg = st.progression[(size_t) (bar % 4)];
+        if (p.bars >= 8 && (bar % 8) == 7)
+            deg = cadenceDegree (st.progression);
+
         auto chord = theory::diatonicChord (base, rootPc, ivals, deg, tones);
         if (! prev.empty())
             chord = theory::voiceLead (prev, chord);

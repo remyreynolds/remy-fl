@@ -57,6 +57,7 @@ private:
 
     AIMidiGenProcessor& processor;
     CustomLookAndFeel   lnf;
+    juce::TooltipWindow tooltipWindow { this, 650 }; // tooltips need a host window
 
     // Surface containers (declared before their children so they outlive them)
     Surface currentSurface = Surface::Generate;
@@ -97,6 +98,7 @@ private:
     juce::TextButton previewButton { "Preview" };
     juce::TextButton undoButton { "Undo" };
     juce::TextButton generateAllButton { "Generate all" };
+    juce::TextButton newIdeaButton { "New idea" };   // fresh seed + generate all + critic
     juce::TextButton generateLaneButton { "Generate" };
     juce::TextButton varyLaneButton { "Vary" };
     juce::TextButton hostSyncButton { "Host BPM" };

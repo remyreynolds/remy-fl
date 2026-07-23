@@ -129,6 +129,10 @@ private:
     std::array<std::atomic<int>, (size_t) InstrumentType::NumTypes> partTimbres {};
     std::atomic<int> drumStyle { (int) DrumKitStyle::House };
 
+    // Sidechain "pump": pitched mix ducks under each kick (audio thread only).
+    float  duckEnv        = 0.0f;
+    double duckSampleRate = 44100.0;
+
     // Shared across voices — swapped atomically via shared_ptr copies under lock-free reads
     std::array<std::shared_ptr<const LoadedSample>, (size_t) DrumPiece::NumPieces> drumSamples;
     std::array<std::shared_ptr<const LoadedSample>, (size_t) InstrumentType::NumTypes> partSamples;

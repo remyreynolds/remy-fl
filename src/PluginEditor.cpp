@@ -75,6 +75,23 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
     generateAllButton.onClick = [this] { generateFocusedParts(); };
     generateSurface.addAndMakeVisible (generateAllButton);
 
+    newIdeaButton.setComponentID ("outline");
+    newIdeaButton.setTooltip ("Roll a completely fresh idea: new seed, regenerate every "
+                              "unlocked lane, critic pass. One undo step.");
+    newIdeaButton.onClick = [this]
+    {
+        auto& mp = processor.params();
+        mp.seed = 1u + (unsigned int) juce::Random::getSystemRandom().nextInt (0x7fffffff);
+        processor.generateAllParts();
+        refreshPanels();
+        chatPanel.addAssistantMessage ("New idea rolled (seed "
+                                       + juce::String ((juce::int64) mp.seed)
+                                       + "). Undo brings the old one back.");
+        if (processor.lastCriticSummary().isNotEmpty())
+            chatPanel.addAssistantMessage (processor.lastCriticSummary());
+    };
+    generateSurface.addAndMakeVisible (newIdeaButton);
+
     generateLaneButton.setComponentID ("primary");
     generateLaneButton.setTooltip ("Generate the focused instrument lane");
     generateLaneButton.onClick = [this] { generateFocusedLane(); };
@@ -308,6 +325,7 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
     browseSurface.addAndMakeVisible (packCombo);
 
     previewButton.setComponentID ("ghost");
+    previewButton.setTooltip ("Audition the loop with the built-in preview synth (with sidechain pump)");
     previewButton.setClickingTogglesState (true);
     previewButton.onClick = [this]
     {
@@ -547,6 +565,18 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
     };
     chatPanel.setDocsStatus (processor.ai().knowledge().statusLine());
     chatSurface.addAndMakeVisible (chatPanel);
+
+    // First-open quick-start — so a new producer knows the whole workflow
+    // without reading anything else.
+    chatPanel.addAssistantMessage (
+        "Welcome! Quick start:\n"
+        "1. Pick a Genre and hit \"New idea\" (or \"Generate all\") — every lane "
+        "stays in key and in sync with the shared chord plan.\n"
+        "2. Lock any lane you like, reroll the rest.\n"
+        "3. Drag a lane (or \"Export all\") straight into your DAW's piano roll.\n"
+        "4. \"MIDI DNA\" learns the groove + key of any .mid you load.\n"
+        "5. Or just tell me what you want here — e.g. \"make a darker afro "
+        "house idea at 122\".");
 
     for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
     {
@@ -1640,6 +1670,8 @@ void AIMidiGenEditor::layoutGenerateSurface()
         generateLaneButton.setBounds (rail.removeFromTop (40));
         rail.removeFromTop (8);
         generateAllButton.setBounds (rail.removeFromTop (34));
+        rail.removeFromTop (8);
+        newIdeaButton.setBounds (rail.removeFromTop (32));
         rail.removeFromTop (8);
         varyLaneButton.setBounds (rail.removeFromTop (32));
         rail.removeFromTop (8);

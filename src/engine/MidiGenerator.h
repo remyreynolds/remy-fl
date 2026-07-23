@@ -70,6 +70,8 @@ private:
     GeneratedPart generateChordsWithMode (const MusicParams&, ChordMode, int tones);
     GeneratedPart generateBass   (const MusicParams&);
     GeneratedPart generateMelody (const MusicParams&);
+    /** Answers placed inside the melody's gaps (call-and-response). */
+    GeneratedPart generateCounterMelody (const MusicParams&);
     GeneratedPart generateDrums  (const MusicParams&);
     GeneratedPart generateArp    (const MusicParams&);
     GeneratedPart generatePad    (const MusicParams&);

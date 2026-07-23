@@ -22,7 +22,7 @@ GeneratedPart MidiGenerator::generate (InstrumentType type, const MusicParams& p
         case InstrumentType::Chords:        part = generateChords (params); break;
         case InstrumentType::Bass:          part = generateBass   (params); break;
         case InstrumentType::Melody:        part = generateMelody (params); break;
-        case InstrumentType::CounterMelody: part = generateMelody (params); break;
+        case InstrumentType::CounterMelody: part = generateCounterMelody (params); break;
         case InstrumentType::Drums:         part = generateDrums  (params); break;
         case InstrumentType::Arp:           part = generateArp    (params); break;
         case InstrumentType::Pad:           part = generatePad    (params); break;
@@ -115,9 +115,14 @@ GeneratedPart MidiGenerator::generateBass (const MusicParams& p)
     const auto ivals = scaleIntervals (p.scale);
     const int base   = 12 * (p.octave - 2) + rootPc; // low register
 
+    // Roots come from the shared song plan (NOT the raw preset progression)
+    // so the bass also follows the cadential turnaround bar in 8-bar phrases.
+    const auto plan = buildSongPlan (p, st.chordTones);
+
     auto degreeNote = [&] (int bar) -> int
     {
-        const int deg = st.progression[(size_t) (bar % 4)];
+        const int deg = plan.degrees[(size_t) std::min (bar,
+                            (int) plan.degrees.size() - 1)];
         return base + ivals[(size_t) (deg % (int) ivals.size())];
     };
 
@@ -190,16 +195,36 @@ GeneratedPart MidiGenerator::generateMelody (const MusicParams& p)
     GeneratedPart part;
     const int rootPc = rootPitchClass (p.root);
     const auto ivals = scaleIntervals (p.scale);
+    const int nIvals = (int) ivals.size();
     const int base   = 12 * (p.octave + 1) + rootPc;
 
-    // Harmony anchor: bar starts resolve to the shared song plan's degree,
-    // so the hook agrees with chords/bass/arp by construction (the critic
-    // then also snaps any stray strong-beat notes to chord tones).
+    // Harmony anchor: the shared song plan. Strong beats sit on chord tones,
+    // weak beats move stepwise (passing tones), and the last note of each
+    // bar APPROACHES the next bar's chord tone by step — so the line pulls
+    // into every chord change instead of wandering (tension -> resolution).
     const auto& st  = findStyle (p.genre);
     const auto plan = buildSongPlan (p, st.chordTones);
 
     const double stepBeats = (p.rhythmComplexity > 0.6f || rand01() < 0.35f) ? 0.25 : 0.5;
     const int stepsPerBar  = (int) std::round (4.0 / stepBeats);
+    const int stepsPerBeat = (int) std::round (1.0 / stepBeats);
+
+    // Absolute scale grid: index i -> a real MIDI note, monotonically rising.
+    auto noteAt = [&] (int idx) -> int
+    {
+        idx = std::clamp (idx, 0, nIvals * 10 - 1);
+        return rootPc + (idx / nIvals) * 12 + ivals[(size_t) (idx % nIvals)];
+    };
+    auto nearestIdx = [&] (int note) -> int
+    {
+        int best = 0, bestD = 999;
+        for (int i = 0; i < nIvals * 10; ++i)
+        {
+            const int d = std::abs (noteAt (i) - note);
+            if (d < bestD) { bestD = d; best = i; }
+        }
+        return best;
+    };
 
     // Build a one-bar rhythmic motif, then repeat it with variation —
     // this is what makes it sound like a hook instead of dice rolls.
@@ -207,35 +232,137 @@ GeneratedPart MidiGenerator::generateMelody (const MusicParams& p)
     const float density = 0.25f + p.noteDensity * 0.5f;
     for (int s = 0; s < stepsPerBar; ++s)
         motif[(size_t) s] = rand01() < density;
-    motif[0] = motif[0] || rand01() < 0.6f; // usually anchor the downbeat
+    motif[0] = true; // anchor the downbeat — the hook needs a home
 
-    int lastDeg = randInt (0, (int) ivals.size() - 1);
+    const int loIdx = nearestIdx (base - 3);
+    const int hiIdx = nearestIdx (base + 19);
+    int curIdx = nearestIdx (theory::snapToChord (base, plan.chords[0]));
 
     for (int bar = 0; bar < p.bars; ++bar)
     {
-        const int chordDeg = plan.degrees[(size_t) std::min (bar,
-                                (int) plan.degrees.size() - 1)];
+        const auto& chord     = plan.chords[(size_t) std::min (bar, (int) plan.chords.size() - 1)];
+        const bool  lastBar   = bar == p.bars - 1;
+        const auto* nextChord = lastBar ? &plan.chords[0]
+                                        : &plan.chords[(size_t) std::min (bar + 1,
+                                              (int) plan.chords.size() - 1)];
+
+        // Which steps sound this bar (motif +/- variation)?
+        std::vector<int> active;
         for (int s = 0; s < stepsPerBar; ++s)
         {
             bool play = motif[(size_t) s];
-            if (rand01() < 0.15f) play = ! play; // per-bar variation
-            if (! play) continue;
+            if (s != 0 && rand01() < 0.15f) play = ! play; // per-bar variation
+            if (play) active.push_back (s);
+        }
 
-            if (s == 0 && rand01() < 0.7f)
-                lastDeg = chordDeg; // resolve to the chord degree at bar starts
-            else
+        for (size_t a = 0; a < active.size(); ++a)
+        {
+            const int s = active[a];
+            const bool strong    = (s % stepsPerBeat) == 0;   // on a beat
+            const bool lastOfBar = a == active.size() - 1;
+            int note;
+
+            if (lastBar && lastOfBar)
             {
-                const int move = (int) std::round ((rand01() - 0.5f) * 4.0f * (0.5f + p.complexity));
-                lastDeg = std::clamp (lastDeg + move, 0, (int) ivals.size() * 2);
+                // Phrase resolution: land the final note on a tone of the
+                // loop's opening chord and let it ring — the loop breathes
+                // out, then pulls back around.
+                note = theory::snapToChord (noteAt (curIdx), *nextChord);
+                curIdx = nearestIdx (note);
+                part.notes.push_back ({ bar * 4.0 + s * stepBeats,
+                                        stepBeats * 3.0, note, 0.75f });
+                continue;
             }
 
-            const int oct  = lastDeg / (int) ivals.size();
-            const int note = base + oct * 12 + ivals[(size_t) (lastDeg % (int) ivals.size())];
-            const double gate = 0.6 + rand01() * 0.35;
+            if (lastOfBar && ! chord.empty())
+            {
+                // Approach note: one scale step above/below the tone this
+                // line resolves to at the next bar's downbeat.
+                const int target = theory::snapToChord (noteAt (curIdx), *nextChord);
+                const int tIdx   = nearestIdx (target);
+                curIdx = tIdx + (rand01() < 0.5f ? 1 : -1);
+                note   = noteAt (curIdx);
+            }
+            else if (strong)
+            {
+                // Chord tone on the beat (small chord-tone leaps allowed).
+                const int move = randInt (-2, 2);
+                note   = theory::snapToChord (noteAt (curIdx + move), chord);
+                curIdx = nearestIdx (note);
+            }
+            else
+            {
+                // Weak beat: stepwise passing motion through the scale.
+                const int move = rand01() < 0.5f ? 1 : -1;
+                const int wide = rand01() < p.complexity * 0.4f ? 2 : 1;
+                curIdx = std::clamp (curIdx + move * wide, loIdx, hiIdx);
+                note   = noteAt (curIdx);
+            }
+
+            curIdx = std::clamp (curIdx, loIdx, hiIdx);
+
+            // Avoid-note handling: a passing tone one semitone above a chord
+            // tone is fine as colour but shouldn't sustain — shorten it.
+            const bool rub = ! strong && ! chord.empty()
+                          && theory::isChordTone (note - 1, chord)
+                          && ! theory::isChordTone (note, chord);
+            const double gate = rub ? 0.45 : 0.6 + rand01() * 0.35;
+
             part.notes.push_back ({ bar * 4.0 + s * stepBeats, stepBeats * gate,
                                     note, 0.6f + rand01() * 0.3f });
         }
     }
+    return part;
+}
+
+GeneratedPart MidiGenerator::generateCounterMelody (const MusicParams& p)
+{
+    // Call-and-response: rebuild the melody with the SAME dice (identical
+    // seed path), find its gaps, and answer INSIDE them — the two lines
+    // converse instead of talking over each other.
+    auto melody = generateMelody (p);
+
+    // The answers get their own dice so they aren't a copy of the call.
+    rng.seed ((p.seed != 0 ? p.seed : std::random_device{}()) ^ 0x9e3779b9u);
+
+    const auto& st  = findStyle (p.genre);
+    const auto plan = buildSongPlan (p, st.chordTones);
+
+    std::sort (melody.notes.begin(), melody.notes.end(),
+               [] (const NoteEvent& a, const NoteEvent& b)
+               { return a.startBeats < b.startBeats; });
+
+    GeneratedPart part;
+    const double loopEnd = p.bars * 4.0;
+
+    auto answer = [&] (double from, double to)
+    {
+        if (to - from < 1.0) return;               // only real gaps
+        const auto& chord = chordAtBeat (plan, from);
+        if (chord.empty()) return;
+
+        // 1-3 short chord-tone notes walking up or down through the gap.
+        const int count = std::min (3, 1 + (int) ((to - from) / 1.0));
+        const int dir   = rand01() < 0.5f ? 1 : -1;
+        int idx = randInt (0, (int) chord.size() - 1);
+        for (int i = 0; i < count; ++i)
+        {
+            if (rand01() < 0.25f) continue;        // answers stay sparse
+            const double t = from + 0.25 + i * 0.5;
+            if (t + 0.4 > to) break;
+            idx = (idx + dir + (int) chord.size()) % (int) chord.size();
+            part.notes.push_back ({ t, 0.4, chord[(size_t) idx] + 12,
+                                    0.45f + rand01() * 0.15f });
+        }
+    };
+
+    double cursor = 0.0;
+    for (const auto& n : melody.notes)
+    {
+        answer (cursor, n.startBeats);
+        cursor = std::max (cursor, n.startBeats + n.lengthBeats);
+    }
+    answer (cursor, loopEnd);
     return part;
 }
 
@@ -373,6 +500,24 @@ std::array<GeneratedPart, (size_t) DrumPiece::NumPieces>
                     { b0 + s * 0.25, 0.12, fillNote, vel });
             }
         }
+
+        // Ghost notes: barely-audible snare/rim ticks on the "a" before the
+        // backbeats — the human wrist a drum machine doesn't have. Scaled by
+        // the humanize dial so a fully quantized feel is still available.
+        const auto ghostPiece = styleHasSnare ? DrumPiece::Snare : DrumPiece::Rim;
+        const int ghostNote   = drumPieceMidiNote (ghostPiece);
+        const float ghostProb = 0.35f * (0.4f + p.humanize);
+        for (int bar = 0; bar < p.bars; ++bar)
+        {
+            const double b0 = bar * 4.0;
+            for (int s : { 3, 7, 11 })
+            {
+                if (rand01() > ghostProb) continue;
+                kit[(size_t) ghostPiece].notes.push_back (
+                    { b0 + s * 0.25, 0.08, ghostNote,
+                      0.12f + rand01() * 0.1f });
+            }
+        }
     }
 
     for (auto& piece : kit)
@@ -412,10 +557,23 @@ int MidiGenerator::validate (GeneratedPart& part, const MusicParams& p)
         // 2nd/4th 1/16 of each beat a lighter push (shuffle feel — essential
         // for UK garage and swung deep/afro grooves).
         const double frac = std::fmod (n.startBeats, 1.0);
-        if (std::abs (frac - 0.5) < 1e-3)
+        const bool offbeat8  = std::abs (frac - 0.5) < 1e-3;
+        const bool sixteenth = std::abs (frac - 0.25) < 1e-3
+                            || std::abs (frac - 0.75) < 1e-3;
+        if (offbeat8)
             n.startBeats += p.swing * 0.15;
-        else if (std::abs (frac - 0.25) < 1e-3 || std::abs (frac - 0.75) < 1e-3)
+        else if (sixteenth)
             n.startBeats += p.swing * 0.08;
+
+        // Accent wave: downbeats strongest, offbeat 8ths medium, 16th
+        // "e"/"a" lightest — a musical velocity contour instead of only
+        // random jitter. Ghost notes (already very quiet) are left alone.
+        if (n.velocity > 0.25f)
+        {
+            const float accent = offbeat8 ? 0.93f : sixteenth ? 0.85f : 1.0f;
+            const float amount = 0.35f + 0.65f * p.humanize;
+            n.velocity *= 1.0f + (accent - 1.0f) * amount;
+        }
 
         // Humanize timing + velocity slightly.
         n.startBeats += (rand01() - 0.5f) * 0.02 * p.humanize;

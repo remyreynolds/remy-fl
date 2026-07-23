@@ -83,6 +83,8 @@ void PreviewSynth::prepare (double sampleRate, int /*samplesPerBlock*/)
     for (auto& s : pitched)
         s.setCurrentPlaybackSampleRate (sampleRate);
     drums.setCurrentPlaybackSampleRate (sampleRate);
+    duckSampleRate = sampleRate > 0.0 ? sampleRate : 44100.0;
+    duckEnv = 0.0f;
 }
 
 void PreviewSynth::setPartTimbre (InstrumentType type, PartTimbre timbre)
@@ -164,6 +166,44 @@ void PreviewSynth::render (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& m
     for (int i = 0; i < kPitchedParts; ++i)
         pitched[(size_t) i].renderNextBlock (buffer, partMidi[(size_t) i],
                                              0, buffer.getNumSamples());
+
+    // Sidechain pump: at this point the buffer holds ONLY the pitched mix,
+    // so duck it under every kick hit before the drums are added on top —
+    // the classic house "pump" that makes the preview sit like a record.
+    {
+        const int numSamples = buffer.getNumSamples();
+
+        // Kick note-on positions inside this block.
+        int kickPos[32];
+        int numKicks = 0;
+        for (const auto metadata : kit)
+        {
+            const auto msg = metadata.getMessage();
+            if (msg.isNoteOn()
+                && drumPieceForMidiNote (msg.getNoteNumber()) == DrumPiece::Kick
+                && numKicks < 32)
+                kickPos[numKicks++] = metadata.samplePosition;
+        }
+
+        const float depth   = 0.55f; // max gain reduction under the kick
+        const float recover = (float) std::exp (-1.0 / (duckSampleRate * 0.110)); // ~110ms release
+        float env = duckEnv;
+        int nextKick = 0;
+
+        for (int i = 0; i < numSamples; ++i)
+        {
+            while (nextKick < numKicks && kickPos[nextKick] <= i)
+            {
+                env = 1.0f;
+                ++nextKick;
+            }
+            const float g = 1.0f - depth * env;
+            for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                buffer.getWritePointer (ch)[i] *= g;
+            env *= recover;
+        }
+        duckEnv = env;
+    }
 
     drums.renderNextBlock (buffer, kit, 0, buffer.getNumSamples());
 

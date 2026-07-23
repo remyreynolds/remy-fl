@@ -220,3 +220,39 @@ patterns; chat converses by default). Resolutions of note:
   step covers the whole DNA regenerate.
 - Genre changes (combo or auto-detect in chat) post the style's "Sound
   picks" patch guidance to the chat panel.
+
+---
+
+## Phase 1.6 — Musicality & usability round 2 (2026-07-22)
+
+Seven improvements across usability, sound, and melody↔chord sync:
+
+1. **Humanize v2** — musical velocity accents (downbeats > offbeat 8ths >
+   16th "e"/"a") layered under the random jitter, scaled by the humanize
+   dial; ghost snare/rim ticks on the "a" before backbeats.
+2. **Melody passing tones & resolution** — strong beats sit on chord tones
+   (small chord-tone leaps), weak beats move stepwise through the scale,
+   each bar's last note APPROACHES the next bar's chord tone by step, the
+   loop's final note lands on the opening chord and rings; avoid-notes
+   (semitone above a chord tone) are auto-shortened into passing colour.
+3. **Call-and-response counter-melody** — counter lane rebuilds the melody
+   with the same dice, finds its gaps (≥ 1 beat), and answers inside them
+   with sparse chord-tone figures; no more two-leads-talking-over-each-other.
+4. **8-bar A/B song plans** — `buildSongPlan` substitutes a deterministic
+   cadential turnaround degree on the final bar of every 8-bar phrase
+   (dominant, or subdominant when the progression already ends dominant);
+   bass now reads plan degrees, so every lane follows the cadence.
+5. **Sidechain pump in the preview** — the pitched mix ducks ~55% under
+   every kick with a ~110 ms release, applied before drums are summed;
+   previews now pump like a house record.
+6. **"New idea" button** — one click: fresh seed → regenerate all unlocked
+   lanes → critic pass → summary in chat; one undo step reverses it.
+7. **Onboarding** — first-open quick-start message in chat (workflow,
+   locks, drag/export, DNA, chat prompts) and a TooltipWindow so the
+   existing per-control tooltips actually display.
+
+### Validation
+- g++ harness extended: 8-bar cadence (first half untouched, bar 8 swaps
+  to the cadence degree, 4-bar loops unaffected, cadence bar still
+  voice-leads within an octave for all 8 styles) — all green on Linux.
+  Full JUCE build on the Mac via install-mac.sh.
