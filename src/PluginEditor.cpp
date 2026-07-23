@@ -356,15 +356,15 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
     };
     addAndMakeVisible (previewButton);
 
-    // MIDI-pack DNA: drop in a loop you love and generation inherits its
-    // groove + key. Analysis only — the loop's notes are never copied.
+    // Reference MIDI becomes a persistent abstract style profile in the Brain.
+    // Analysis only — the loop's notes are never copied or retained.
     dnaButton.setComponentID ("ghost");
-    dnaButton.setTooltip ("Learn groove + key from a MIDI loop — generation "
-                          "inherits its feel (the loop's notes are never copied)");
+    dnaButton.setTooltip ("Study a MIDI reference and save its abstract style to the Brain "
+                          "(source notes and riffs are never copied)");
     dnaButton.onClick = [this]
     {
         dnaChooser = std::make_unique<juce::FileChooser> (
-            "Pick a MIDI loop to learn from", juce::File{}, "*.mid;*.midi");
+            "Add reference MIDI to the Brain", juce::File{}, "*.mid;*.midi");
         juce::Component::SafePointer<AIMidiGenEditor> safe (this);
         dnaChooser->launchAsync (juce::FileBrowserComponent::openMode
                                | juce::FileBrowserComponent::canSelectFiles,
@@ -374,6 +374,7 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
                 const auto f = fc.getResult();
                 if (f == juce::File{}) return;
                 safe->chatPanel.addAssistantMessage (safe->processor.loadDna (f));
+                safe->chatPanel.setDocsStatus (safe->processor.ai().knowledge().statusLine());
                 safe->chatPanel.addAssistantMessage (safe->processor.lastCriticSummary());
                 safe->refreshPanels();
             });

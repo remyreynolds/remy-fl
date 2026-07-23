@@ -534,16 +534,28 @@ KnowledgeBase::RetrievalResult KnowledgeBase::retrieveForQuery (const juce::Stri
            "Identify the style, prefer the best-matching docs, and follow their rules "
            "(harmony, rhythm, voicing, genre) when answering or composing.\n\n";
 
+    int referenceDocsAdded = 0;
+    juce::StringArray includedReferenceTitles;
     for (auto& s : scored)
     {
         if (s.chunk.docTitle.containsIgnoreCase ("master-system"))
             continue; // already injected
+        const bool isReference = s.chunk.docTitle.containsIgnoreCase ("reference-midi-");
+        if (isReference
+            && ! includedReferenceTitles.contains (s.chunk.docTitle)
+            && referenceDocsAdded >= 3)
+            continue;
         juce::String block;
         block << "### " << s.chunk.docTitle << "\n" << s.chunk.text.trim() << "\n\n";
         if (out.length() + block.length() > maxChars)
             break;
         out << block;
         result.matchedDocs.addIfNotAlreadyThere (s.chunk.docTitle);
+        if (isReference && ! includedReferenceTitles.contains (s.chunk.docTitle))
+        {
+            includedReferenceTitles.add (s.chunk.docTitle);
+            ++referenceDocsAdded;
+        }
     }
 
     result.context = out.trim();

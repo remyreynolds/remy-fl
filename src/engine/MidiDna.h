@@ -29,11 +29,21 @@ struct MidiDna
     int rootPc = 0;                 // 0..11
     std::string scale = "minor";    // best-matching scale name
 
+    // Style measurements retained as guidance, never as source notes.
+    double bpm = 0.0;
+    int pitchedNoteCount = 0;
+    float pitchedDensityPerBeat = 0.0f;
+    float averageVelocity = 0.0f;
+    float syncopation = 0.0f;       // 0..1, share of onsets away from quarter notes
+
     /** Parse + analyze a .mid file. Returns an invalid DNA on failure. */
     static MidiDna analyzeFile (const juce::File& file);
 
     /** Human-readable one-liner of what was learned (for the chat panel). */
     juce::String describe() const;
+
+    /** Compact persistent brain document used during later AI generations. */
+    juce::String styleProfile() const;
 };
 
 } // namespace aimidi

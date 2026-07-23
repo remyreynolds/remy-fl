@@ -44,7 +44,8 @@ MidiDna MidiDna::analyzeFile (const juce::File& file)
     if (fmt <= 0) return dna; // SMPTE time not supported — loops are PPQ
     const double ticksPerBeat = (double) fmt;
 
-    int drumOnsets = 0, pitchedNotes = 0;
+    int drumOnsets = 0, pitchedNotes = 0, syncopatedOnsets = 0;
+    double lastBeat = 0.0, velocityTotal = 0.0;
     std::array<double, 12> pcWeight {};
 
     for (int t = 0; t < mf.getNumTracks(); ++t)
@@ -58,6 +59,7 @@ MidiDna MidiDna::analyzeFile (const juce::File& file)
             const double beat = track->getEventTime (e) / ticksPerBeat;
             const int note    = msg.getNoteNumber();
             const float vel   = msg.getFloatVelocity();
+            lastBeat = std::max (lastBeat, beat);
 
             const int piece = msg.getChannel() == 10 ? gmNoteToPiece (note)
                             : (note < 82 ? gmNoteToPiece (note) : -1);
@@ -75,6 +77,10 @@ MidiDna MidiDna::analyzeFile (const juce::File& file)
             else if (msg.getChannel() != 10)
             {
                 pcWeight[(size_t) (note % 12)] += (double) vel;
+                velocityTotal += vel * 127.0;
+                const double quarterDistance = std::abs (beat - std::round (beat));
+                if (quarterDistance > 0.08)
+                    ++syncopatedOnsets;
                 ++pitchedNotes;
             }
         }
@@ -82,6 +88,30 @@ MidiDna MidiDna::analyzeFile (const juce::File& file)
 
     // --- groove verdict ---
     dna.hasDrums = drumOnsets >= 4;
+    dna.pitchedNoteCount = pitchedNotes;
+    dna.pitchedDensityPerBeat = lastBeat > 0.0
+        ? (float) ((double) pitchedNotes / (lastBeat + 1.0)) : 0.0f;
+    dna.averageVelocity = pitchedNotes > 0
+        ? (float) (velocityTotal / (double) pitchedNotes) : 0.0f;
+    dna.syncopation = pitchedNotes > 0
+        ? (float) syncopatedOnsets / (float) pitchedNotes : 0.0f;
+
+    // JUCE exposes tempo events in seconds-per-quarter-note.
+    for (int t = 0; t < mf.getNumTracks() && dna.bpm <= 0.0; ++t)
+    {
+        const auto* track = mf.getTrack (t);
+        for (int e = 0; e < track->getNumEvents(); ++e)
+        {
+            const auto& msg = track->getEventPointer (e)->message;
+            if (msg.isTempoMetaEvent())
+            {
+                const auto seconds = msg.getTempoSecondsPerQuarterNote();
+                if (seconds > 0.0)
+                    dna.bpm = 60.0 / seconds;
+                break;
+            }
+        }
+    }
 
     // --- harmony verdict: vote root+scale by pitch-class weight coverage ---
     if (pitchedNotes >= 8)
@@ -132,7 +162,32 @@ juce::String MidiDna::describe() const
         bits.add ("harmony -> " + juce::String (names[rootPc]) + " " + juce::String (scale));
 
     return s + bits.joinIntoString (" + ")
-         + ". Regenerating with it — drums follow the reference feel now.";
+         + ". Saved as a reusable style reference; source notes are never copied.";
+}
+
+juce::String MidiDna::styleProfile() const
+{
+    if (! valid) return {};
+    static const char* names[] = { "C","C#","D","D#","E","F","F#","G","G#","A","A#","B" };
+    juce::String s;
+    s << "# Reference MIDI style profile\n\n"
+      << "Source label: " << juce::String (sourceName) << "\n"
+      << "Learning rule: borrow abstract feel only. Never reproduce source pitches, riffs, or note sequence.\n";
+    if (bpm > 0.0) s << "Tempo: " << juce::String (bpm, 1) << " BPM\n";
+    if (hasHarmony) s << "Tonal center: " << names[rootPc] << " " << juce::String (scale) << "\n";
+    s << "Pitched-note density: " << juce::String (pitchedDensityPerBeat, 2) << " notes/beat\n"
+      << "Average velocity: " << juce::String (averageVelocity, 1) << "/127\n"
+      << "Syncopation: " << juce::String (syncopation * 100.0f, 0) << "% of pitched onsets off quarter notes\n";
+    if (hasDrums)
+    {
+        int covered = 0;
+        for (const auto& piece : drumSteps)
+            for (float v : piece)
+                if (v > 0.0f) { ++covered; break; }
+        s << "Drum roles detected: " << covered << "\n";
+    }
+    s << "Use for: density, energy, syncopation, tonal color, and groove weighting.\n";
+    return s;
 }
 
 } // namespace aimidi

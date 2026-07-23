@@ -1028,6 +1028,13 @@ juce::String AIMidiGenProcessor::loadDna (const juce::File& midiFile)
     if (! dna.valid)
         return dna.describe();
 
+    // Keep the abstract analysis in the local Brain so future Claude requests
+    // can retrieve it. The original MIDI and its note sequence are not stored.
+    const auto stableId = "reference-midi-" + midiFile.getFileNameWithoutExtension();
+    aiClient.knowledge().upsertText (stableId,
+                                     "Reference MIDI — " + midiFile.getFileNameWithoutExtension(),
+                                     dna.styleProfile());
+
     pushUndoSnapshot(); // one undo step covers the whole DNA regenerate
 
     // Harmony learned from the pack becomes the project key (the drums

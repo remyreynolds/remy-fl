@@ -1,5 +1,16 @@
 # AI MIDI Gen — Development Log
 
+## 2026-07-22 — Efficient Brain + persistent reference MIDI
+
+- Reorganized the runtime Brain into a short priority-based decision pipeline:
+  locks → text brief → project state → references → defaults.
+- `MIDI DNA` now saves a reusable local style profile with tempo, tonal center,
+  density, velocity, syncopation, and drum-role coverage.
+- The source MIDI and its note sequence are never stored in Brain memory, and
+  the prompt explicitly forbids copying melodies, riffs, or note order.
+- Retrieval blends no more than three reference-MIDI profiles per generation
+  so added music informs the result without flooding or confusing Claude.
+
 ## 2026-07-22 — Brain-led harmony variation
 
 - Bundled the full master Brain prompt into the plugin binary so Claude receives

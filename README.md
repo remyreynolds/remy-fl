@@ -122,5 +122,12 @@ ai-midi-gen/
 See **DEVLOG.md** for what's done, known issues, and the phase roadmap.
 
 ## Groovewright brain pipeline
-See [README_BRAIN.md](README_BRAIN.md) for the Python MIDI agent (prompt file → validators → .mid).
 
+Use **MIDI DNA** to add a real MIDI loop as a musical reference. The plugin
+measures its tempo, tonal center, density, velocity, syncopation, and drum-role
+coverage, then saves only that abstract style profile in the local Brain. Later
+AI generations retrieve up to three relevant profiles and blend their feel;
+the original notes are not stored or copied. Convert audio to MIDI in the DAW
+first so analysis stays deterministic.
+
+See [README_BRAIN.md](README_BRAIN.md) for the Python MIDI agent (prompt file → validators → .mid).
