@@ -366,3 +366,67 @@ rides along on the AI MIDI-generation path.
   question vs command routing, "a minor" article disambiguation,
   advice-seeking safety, opposing-word cancellation. All green on Linux;
   full JUCE build on the Mac via install-mac.sh.
+
+## Phase 1.8 — Deep audit: correctness, thread-safety, music quality (2026-07-23)
+
+Ran the standing 11:30pm deep-audit order: four parallel read-only audits
+(processor, engine, AI layer, editor) produced ~65 findings; everything
+critical or high-value was fixed, committed granularly, and pushed.
+
+### What was actually broken (now fixed)
+- **Installer never verified a successful build** — install-mac.sh checked
+  for the old "AI MIDI Gen" bundle names while CMake produces
+  "ComposerAI.vst3/.component". Fixed + stale-bundle cleanup.
+- **State didn't persist** — swing/humanize/densities/seed/toggles,
+  per-lane notes/locks/mutes, drum-kit lanes, and the critic summary were
+  all dropped on save/reload. getState/setState now round-trips the whole
+  project (flat note arrays), then resyncs sounds, samples, and sequences.
+- **Audio-thread races** — host-tempo adoption mutated params and warm-up
+  rebuilt sequences on the audio thread. Now: atomic bpm/bars mirrors,
+  AsyncUpdater for adoption/rebuilds, try-locks in the MIDI collectors.
+- **Undo was lossy and mis-ordered** — snapshots now include genre mode,
+  timbres, and gains; exactly one snapshot is taken *before* a chat
+  command mutates params; undo resyncs preview sounds.
+- **AI drums all landed on the kick** — AI-generated drum lanes are now
+  split by GM pitch into the right kit pieces (locks respected); insane
+  AI bpm/bars values are rejected.
+- **Music-theory bugs** — snapToScale used non-circular pitch-class
+  distance (notes below the root snapped the wrong way), diatonicChord
+  folded upper extensions back into clusters (%12), voiceLead deleted
+  collided tones (9th/11th chords shrank to triads). All corrected;
+  engine tests still green.
+- **AI client races + bad model ids** — background request threads read
+  live provider/key/model members the UI could mutate mid-flight; they
+  now capture an immutable Endpoint snapshot by value. Default model
+  "claude-sonnet-5" (invalid) → claude-sonnet-4-5, with settings
+  migration and real ids in the picker. Truncated (max_tokens) replies
+  get a clear error instead of "could not parse"; out-of-range
+  velocities clamp instead of rejecting whole patterns; HTTP errors are
+  provider-neutral; knowledge retrieval only biases groove docs on the
+  generation path and no longer emits a dangling MASTER banner.
+- **Editor races** — the 2.4s "Composing…" auto-clear re-enabled buttons
+  while async AI requests were still running (callbacks own clearing
+  now); per-piece drum mutes were clobbered by lane solo/mute (tracked
+  separately, OR-combined now); failed vary/continue left the previous
+  success line in the last-run meta.
+
+### Music-quality cleanup
+- Drum-kit generation is seeded (deterministic per seed like every lane).
+- Melody resolution note no longer rings past the loop boundary.
+- Critic drops bass notes clashing with the kick instead of shoving them
+  onto an occupied 16th (which doubled the low end).
+- Arp accents downbeat 16ths (0.8/0.6) instead of flat 0.7; ghost notes
+  audible (0.20–0.35); pads end at 3.95 beats for clean bar retriggers.
+- PreviewSynth: integer-LCG noise, ScopedNoDenormals, ~3ms sidechain
+  attack ramp (no gain-step click), SR-independent attack envelopes,
+  higher polyphony (chords/pad 24, leads 12, drums 16) so voice-stealing
+  stops hard-cutting held voicings.
+
+### Validation
+- `tests/EngineTests.cpp` (plain g++) green after every engine change;
+  critic test updated for the new drop-not-move clash semantics.
+- JUCE-side changes can't compile on this Linux box (no JUCE checkout) —
+  a static review agent verified all signatures/call sites across the
+  three JUCE commits. Full build happens on the Mac via install-mac.sh.
+- Commits: 5d78c2d, 86f36ad, 5cae477, 55d7ee9, 38c4943, 015ecbf, a667d77
+  — all pushed to remyreynolds/remy-fl `ai-midi-gen-plugin`.
