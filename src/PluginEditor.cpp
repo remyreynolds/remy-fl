@@ -92,36 +92,75 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
 
     newIdeaButton.setComponentID ("ghost");
     newIdeaButton.setTooltip ("Roll a completely fresh idea: new seed, regenerate every "
-                              "unlocked lane, critic pass. One undo step.");
-    newIdeaButton.onClick = [this]
-    {
-        auto& mp = processor.params();
-        mp.seed = 1u + (unsigned int) juce::Random::getSystemRandom().nextInt (0x7fffffff);
-        processor.generateAllParts();
-        refreshPanels();
-        chatPanel.addAssistantMessage ("New idea rolled (seed "
-                                       + juce::String ((juce::int64) mp.seed)
-                                       + "). Undo brings the old one back.");
-        if (processor.lastCriticSummary().isNotEmpty())
-            chatPanel.addAssistantMessage (processor.lastCriticSummary());
-    };
+                              "unlocked lane via Claude+Brain when connected (or local offline).");
+    newIdeaButton.onClick = [this] { runNewIdea(); };
     generateSurface.addAndMakeVisible (newIdeaButton);
 
     generateLaneButton.setComponentID ("hero"); // only glowing primary per v4
-    generateLaneButton.setTooltip ("Generate the focused instrument lane");
+    generateLaneButton.setTooltip ("Generate the focused instrument lane (Claude+Brain when connected)");
     generateLaneButton.onClick = [this] { generateFocusedLane(); };
     generateSurface.addAndMakeVisible (generateLaneButton);
 
     varyLaneButton.setComponentID ("ghost");
-    varyLaneButton.setTooltip ("AI variation of the focused lane");
+    varyLaneButton.setTooltip ("AI variation of the focused lane (chords preserve key/genre/BPM/bars)");
     varyLaneButton.onClick = [this]
     {
         if (focusedLane == InstrumentType::Drums)
             chatPanel.addAssistantMessage ("Vary drums from the drum kit panel, or chat \"vary the drums\".");
+        else if (focusedLane == InstrumentType::Chords)
+        {
+            chatPanel.setBusy (true);
+            juce::Component::SafePointer<AIMidiGenEditor> safe (this);
+            processor.varyChordsWithAI ([safe] (AIClient::PatternResponse r)
+            {
+                if (safe == nullptr) return;
+                safe->chatPanel.setBusy (false);
+                if (! r.ok)
+                {
+                    safe->reportGeneration (safe->processor.lastGenerationReport(), true);
+                    return;
+                }
+                safe->chatPanel.addAssistantMessage (
+                    r.assistantText.isNotEmpty() ? r.assistantText
+                                                 : juce::String ("Generated with Claude — chords varied."));
+                safe->refreshLastRunMeta();
+                safe->refreshPanels();
+            });
+        }
         else
             handlePartTransform (focusedLane, "vary");
     };
     generateSurface.addAndMakeVisible (varyLaneButton);
+
+    useLocalButton.setComponentID ("ghost");
+    useLocalButton.setTooltip ("After a Claude failure, run the local SongPlan generator instead");
+    useLocalButton.setEnabled (false);
+    useLocalButton.onClick = [this]
+    {
+        juce::Component::SafePointer<AIMidiGenEditor> safe (this);
+        processor.useLocalGeneratorNow ([safe] (GenerationReport report)
+        {
+            if (safe == nullptr) return;
+            safe->reportGeneration (report, false);
+            safe->refreshPanels();
+        });
+    };
+    generateSurface.addAndMakeVisible (useLocalButton);
+
+    offlineModeButton.setComponentID ("ghost");
+    offlineModeButton.setClickingTogglesState (true);
+    offlineModeButton.setTooltip ("Force the local SongPlan engine (skip Claude even if a key is set)");
+    offlineModeButton.setToggleState (processor.prefersOfflineGeneration(),
+                                      juce::dontSendNotification);
+    offlineModeButton.onClick = [this]
+    {
+        processor.setPreferOfflineGeneration (offlineModeButton.getToggleState());
+        chatPanel.addAssistantMessage (offlineModeButton.getToggleState()
+            ? "Offline mode on — Generate / New Idea use the local engine only."
+            : "Offline mode off — Generate / New Idea use Claude + Brain when a key is set.");
+        refreshProviderUi();
+    };
+    generateSurface.addAndMakeVisible (offlineModeButton);
 
     hostSyncButton.setComponentID ("ghost");
     hostSyncButton.setClickingTogglesState (true);
@@ -1052,16 +1091,22 @@ void AIMidiGenEditor::handlePartTransform (InstrumentType type, const juce::Stri
             if (! r.ok)
             {
                 safe->chatPanel.addAssistantMessage ("Error: "
-                    + (r.error.isNotEmpty() ? r.error : juce::String ("Transform failed.")));
+                    + (r.error.isNotEmpty() ? r.error : juce::String ("Transform failed."))
+                    + "\nMIDI was not replaced with a silent local result."
+                    + (safe->processor.hasPendingLocalOffer()
+                           ? " Click “Use local generator” for the offline engine."
+                           : juce::String()));
+                safe->useLocalButton.setEnabled (safe->processor.hasPendingLocalOffer());
                 safe->refreshPanels();
                 return;
             }
 
             safe->chatPanel.addAssistantMessage (
-                r.assistantText.isNotEmpty()
-                    ? r.assistantText
-                    : (juce::String (toString (type)) + " "
-                       + (mode.equalsIgnoreCase ("continue") ? "continued." : "varied.")));
+                juce::String ("Generated with Claude — ")
+                + (r.assistantText.isNotEmpty()
+                       ? r.assistantText
+                       : (juce::String (toString (type)) + " "
+                          + (mode.equalsIgnoreCase ("continue") ? "continued." : "varied."))));
 
             safe->refreshBpmLabel();
             safe->refreshPanels();
@@ -1531,26 +1576,83 @@ void AIMidiGenEditor::applyWorkspaceFocus()
     generateLaneButton.setButtonText (generatingUi ? "Composing…" : ("Generate " + name));
 }
 
+void AIMidiGenEditor::reportGeneration (const GenerationReport& report, bool offerLocal)
+{
+    useLocalButton.setEnabled (offerLocal && processor.hasPendingLocalOffer());
+
+    if (report.mode == GenerationMode::FailedClaude)
+    {
+        juce::String msg = "Claude failed";
+        if (! report.detail.empty())
+            msg << ": " << report.detail;
+        msg << "\nMIDI was not replaced with a silent local result.";
+        if (offerLocal && processor.hasPendingLocalOffer())
+            msg << " Click “Use local generator” if you want the offline engine.";
+        chatPanel.addAssistantMessage (msg);
+        refreshLastRunMeta();
+        return;
+    }
+
+    juce::String msg = juce::String (report.statusLine);
+    if (report.mode == GenerationMode::ClaudeBrain)
+        msg = "Generated with Claude";
+    else if (report.mode == GenerationMode::OfflineLocal)
+    {
+        if (msg.isEmpty() || ! msg.containsIgnoreCase ("local"))
+            msg = processor.ai().hasApiKey() && processor.prefersOfflineGeneration()
+                ? "Generated locally — offline mode"
+                : (processor.ai().hasApiKey()
+                       ? "Generated locally — offline fallback chosen"
+                       : "Generated locally — no API key");
+    }
+
+    msg << " · seed " << (juce::int64) processor.params().seed;
+    if (! report.fingerprint.empty())
+        msg << " · harmony " << report.fingerprint;
+    chatPanel.addAssistantMessage (msg);
+
+    if (processor.lastCriticSummary().isNotEmpty())
+        chatPanel.addAssistantMessage (processor.lastCriticSummary());
+
+    refreshLastRunMeta();
+}
+
+void AIMidiGenEditor::runNewIdea()
+{
+    beginGeneratingUi();
+    chatPanel.setBusy (true);
+    juce::Component::SafePointer<AIMidiGenEditor> safe (this);
+    processor.newIdeaPreferred ([safe] (GenerationReport report)
+    {
+        if (safe == nullptr) return;
+        safe->chatPanel.setBusy (false);
+        safe->clearGeneratingUi();
+        safe->reportGeneration (report, report.mode == GenerationMode::FailedClaude);
+        safe->refreshPanels();
+    });
+}
+
 void AIMidiGenEditor::generateFocusedLane()
 {
     beginGeneratingUi();
-    if (focusedLane == InstrumentType::Drums)
-        processor.generateDrumKit();
-    else
-        processor.generatePart (focusedLane);
-    refreshLastRunMeta();
-    refreshPanels();
+    chatPanel.setBusy (true);
+    juce::Component::SafePointer<AIMidiGenEditor> safe (this);
+    processor.generatePreferredLane (focusedLane, [safe] (GenerationReport report)
+    {
+        if (safe == nullptr) return;
+        safe->chatPanel.setBusy (false);
+        safe->clearGeneratingUi();
+        safe->reportGeneration (report, report.mode == GenerationMode::FailedClaude);
+        safe->refreshPanels();
+    });
 }
 
 void AIMidiGenEditor::generateFocusedParts()
 {
     beginGeneratingUi();
-    // "Generate all" — still respect chat Focus combo filters when not All
-    if (focusCombo.getSelectedId() <= 1)
-    {
-        processor.generateAllParts();
-    }
-    else
+    // Focused "Generate all" with Focus combo filters still uses the local
+    // engine for the filtered subset (lane-by-lane Claude would mix plans).
+    if (focusCombo.getSelectedId() > 1)
     {
         processor.pushUndoSnapshot();
         for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
@@ -1562,9 +1664,28 @@ void AIMidiGenEditor::generateFocusedParts()
             else
                 processor.generatePart (type, false);
         }
+        const auto label = processor.prefersOfflineGeneration()
+            ? "Generated locally — offline mode"
+            : (processor.ai().hasApiKey()
+                   ? "Generated locally — focus filter (shared SongPlan)"
+                   : "Generated locally — no API key");
+        processor.noteOfflineResult (label);
+        reportGeneration (processor.lastGenerationReport(), false);
+        clearGeneratingUi();
+        refreshPanels();
+        return;
     }
-    refreshLastRunMeta();
-    refreshPanels();
+
+    chatPanel.setBusy (true);
+    juce::Component::SafePointer<AIMidiGenEditor> safe (this);
+    processor.generatePreferredAll ([safe] (GenerationReport report)
+    {
+        if (safe == nullptr) return;
+        safe->chatPanel.setBusy (false);
+        safe->clearGeneratingUi();
+        safe->reportGeneration (report, report.mode == GenerationMode::FailedClaude);
+        safe->refreshPanels();
+    });
 }
 
 bool AIMidiGenEditor::keyPressed (const juce::KeyPress& key)
@@ -1838,6 +1959,10 @@ void AIMidiGenEditor::layoutGenerateSurface()
         rail.removeFromTop (8);
         varyLaneButton.setBounds (rail.removeFromTop (40));
         rail.removeFromTop (8);
+        useLocalButton.setBounds (rail.removeFromTop (36));
+        rail.removeFromTop (6);
+        offlineModeButton.setBounds (rail.removeFromTop (32));
+        rail.removeFromTop (8);
         undoButton.setBounds (rail.removeFromTop (40));
         rail.removeFromTop (8);
         newIdeaButton.setBounds (rail.removeFromTop (36));
@@ -2028,9 +2153,13 @@ void AIMidiGenEditor::refreshLastRunMeta()
     lastRunSeed = juce::String ((juce::int64) mp.seed);
     lastRunMs = "0.8 s";
     const auto name = juce::String (toString (focusedLane));
+    const auto& report = processor.lastGenerationReport();
+    juce::String source = report.statusLine.empty()
+        ? juce::String (lastRunMs)
+        : juce::String (report.statusLine);
     lastRunMeta.setText (name + " · " + juce::String (mp.bars) + " bars · "
                              + juce::String (mp.root) + " " + juce::String (mp.scale)
-                             + "\nseed " + lastRunSeed + " · " + lastRunMs,
+                             + "\nseed " + lastRunSeed + " · " + source,
                          juce::dontSendNotification);
 }
 

@@ -8,7 +8,9 @@
 #include "engine/SampleLibrary.h"
 #include "engine/MidiLibrary.h"
 #include "ai/AIClient.h"
+#include "engine/GenerationReport.h"
 #include <array>
+#include <functional>
 #include <vector>
 
 namespace aimidi
@@ -55,6 +57,37 @@ public:
     void generatePart (InstrumentType t, bool recordUndo = true);
     /** One undo step for regenerating every unlocked pitched/drum part. */
     void generateAllParts();
+
+    /** Offline / local SongPlan engine (never claims to be Claude). */
+    void generateAllPartsOffline (const juce::String& reasonLabel = "Generated locally — no API key");
+    void generatePartOffline (InstrumentType t, bool recordUndo = true,
+                              const juce::String& reasonLabel = "Generated locally — no API key");
+    /** Record an offline result after MIDI was already written (e.g. focus filter). */
+    void noteOfflineResult (const juce::String& reasonLabel);
+    /** Preferred Generate path: Claude+Brain when a key is present and offline
+        mode is off; otherwise local. On Claude failure does NOT silently fall
+        back — sets lastGeneration to FailedClaude and leaves MIDI unchanged. */
+    void generatePreferredAll (std::function<void (GenerationReport)> onDone);
+    void generatePreferredLane (InstrumentType t,
+                                std::function<void (GenerationReport)> onDone);
+
+    /** New Idea: fresh seed + meaningfully different harmonic fingerprint. */
+    void newIdeaPreferred (std::function<void (GenerationReport)> onDone);
+
+    /** Vary chords via Claude while locking key / genre / BPM / bars. */
+    void varyChordsWithAI (std::function<void (AIClient::PatternResponse)> onDone);
+
+    /** After a Claude failure, run the pending local generation if the user
+        explicitly chooses offline. */
+    void useLocalGeneratorNow (std::function<void (GenerationReport)> onDone = nullptr);
+    bool hasPendingLocalOffer() const { return pendingLocalOffer; }
+
+    /** When true, Generate / New Idea always use the local engine even if a key exists. */
+    void setPreferOfflineGeneration (bool offline) { preferOfflineGeneration = offline; }
+    bool prefersOfflineGeneration() const { return preferOfflineGeneration; }
+
+    const GenerationReport& lastGenerationReport() const { return lastGeneration; }
+    juce::String lastHarmonyFingerprint() const { return lastHarmonyFp; }
 
     /** Chat Generate: Claude → validated note JSON → part notes (drag/export ready). */
     void regenerateFromAI (const juce::String& prompt,
@@ -205,8 +238,23 @@ private:
 
     MidiDna dna;                 // groove/harmony learned from a MIDI pack
     juce::String criticSummary;  // what the critic did on the last pass
+    GenerationReport lastGeneration;
+    juce::String lastHarmonyFp;
+    bool preferOfflineGeneration = false;
+    bool pendingLocalOffer = false;
+    enum class PendingLocalAction { None, All, Lane, NewIdea };
+    PendingLocalAction pendingLocalAction = PendingLocalAction::None;
+    InstrumentType pendingLocalLane = InstrumentType::Chords;
 
     void runCritic();            // review + repair the arrangement in place
+    void recordOfflineGeneration (const juce::String& reasonLabel);
+    void recordClaudeSuccess (const MidiPattern& pattern, const juce::String& assistant);
+    void recordClaudeFailure (const juce::String& error,
+                              PendingLocalAction action,
+                              InstrumentType lane = InstrumentType::Chords);
+    juce::String buildClaudeGeneratePrompt (InstrumentType focusOrAll) const;
+    juce::String currentSongPlanFingerprint() const;
+    bool rollSeedUntilFingerprintChanges (const juce::String& previousFp, int maxTries = 12);
 
     // --- preview playback ---
     std::atomic<bool> previewing { false };

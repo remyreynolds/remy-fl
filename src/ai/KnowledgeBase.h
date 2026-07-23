@@ -56,6 +56,9 @@ public:
         return retrieveForQuery (query, maxChars).context;
     }
 
+    /** Full master-system-prompt.md body from the knowledge corpus (or empty). */
+    juce::String masterPromptText() const;
+
     juce::File folder() const;
 
 private:

@@ -1,5 +1,48 @@
 # AI MIDI Gen — Development Log
 
+## 2026-07-22 — Fix repeated chords and connect generation to Brain
+
+### Original cause
+`SongPlan.h` built harmony from a single fixed `findStyle(p.genre).progression`
+and ignored `MusicParams::seed`. Generate / New Idea / Regenerate always used
+the local `MidiGenerator`, so every take in a genre repeated the same chords.
+Claude + Brain were only on Vary / chat MIDI paths; API failures on the legacy
+`sendPrompt` path could silently fall back to a local interpretation.
+
+### Files changed
+- `src/engine/SongPlan.h` — seed-selected progression templates (1/2/4/8),
+  substitutions, inversion colour, turnarounds; shared plan fingerprint
+- `src/engine/GenerationReport.h` — Claude / local / failure status labels
+- `src/PluginProcessor.*` — preferred Generate / New Idea / Vary Chords paths,
+  explicit “Use local generator” after Claude failure (no silent substitute)
+- `src/PluginEditor.*` — Offline toggle, Use local button, clear chat status
+- `src/ai/AIClient.*` — full Brain master prepended to every MIDI request;
+  remove silent local fallback on API failure; local fingerprint memory hooks
+- `src/ai/KnowledgeBase.*` — `masterPromptText()` from corpus or binary data
+- `src/ai/MidiPattern.*` — require `progression` / `chords` metadata for chord JSON
+- `tests/EngineTests.cpp`, `tests/MidiPatternTests.cpp` — seed harmony + source labels
+
+### How Claude / Brain generation works now
+With an API key and Offline mode off, Generate / New Idea call Claude with:
+1. the full bundled master Brain prompt in the system message,
+2. retrieved knowledge references,
+3. project key/BPM/bars/genre locks,
+4. the last eight chord fingerprints to avoid,
+5. one automatic retry on an exact fingerprint repeat.
+Success is reported as **Generated with Claude**.
+
+### How offline generation is identified
+No API key, Offline toggle on, focus-filter local regen, or an explicit
+**Use local generator** click after a Claude error → **Generated locally — …**
+and never labeled as Claude. Failed Claude requests leave MIDI unchanged and
+show the exact API/parse error.
+
+### Test results
+- `EngineTests`: passed (seed-aware SongPlan, shared harmony, New Idea fingerprint escape, source labels, offline in-key)
+- `MidiPatternTests`: passed (chord metadata required, fingerprint, MIDI sequence export)
+- `ctest`: 2/2 passed
+- VST3 + Standalone: built successfully
+
 ## 2026-07-22 — Efficient Brain + persistent reference MIDI
 
 - Reorganized the runtime Brain into a short priority-based decision pipeline:

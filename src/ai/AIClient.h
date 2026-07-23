@@ -113,6 +113,15 @@ public:
     static Response localFallback (const juce::String& userPrompt,
                                    const MusicParams& current);
 
+    /** Remember a local SongPlan / harmony fingerprint in the same 8-slot memory. */
+    void rememberHarmonyFingerprint (const juce::String& fingerprint);
+    /** True when fingerprint is already in recent memory (does not insert). */
+    bool hasRecentHarmonyFingerprint (const juce::String& fingerprint) const;
+    /** Test helper: clear recent progression memory. */
+    void clearRecentHarmonyMemory();
+    /** Full bundled Brain master prompt text (empty if missing). */
+    juce::String bundledMasterPromptText() const;
+
 private:
     struct Turn
     {
@@ -168,5 +177,4 @@ private:
     juce::String recentProgressionsForPrompt() const;
     bool rememberProgressionIfFresh (const MidiPattern& pattern);
 };
-
 } // namespace aimidi

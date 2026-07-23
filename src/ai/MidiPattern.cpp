@@ -55,6 +55,10 @@ Hard rules:
 - All parts share the same key/BPM/bars and must loop cleanly together.
 - Stay in project key/BPM/bars when locked. bars ≤ 16 (prefer 4 or 8).
 - Style of references only — never clone copyrighted riffs.
+- Harmony metadata REQUIRED whenever chords (or a full loop) are generated:
+  "progression": "i–VI–III–VII",
+  "chords": ["Fm7", "Dbmaj7", "Eb7", "Cm7"]
+  The chords[] symbols must match the chord-lane voicings (same bar count).
 - JSON only.)";
 }
 
@@ -315,6 +319,17 @@ MidiPatternParseResult parseClaudeMidiJson (const juce::String& jsonText)
     p.timeSignature = root.getProperty ("timeSignature", "4/4").toString().trim();
     if (p.timeSignature.isEmpty()) p.timeSignature = "4/4";
 
+    p.progression = root.getProperty ("progression", "").toString().trim();
+    if (auto* chordArr = root.getProperty ("chords", {}).getArray())
+    {
+        for (const auto& c : *chordArr)
+        {
+            const auto s = c.toString().trim();
+            if (s.isNotEmpty())
+                p.chordSymbols.add (s);
+        }
+    }
+
     auto parseNotesArray = [] (const juce::var& notesVar, std::vector<PatternNote>& out,
                                juce::String& error, const juce::String& label) -> bool
     {
@@ -378,6 +393,24 @@ MidiPatternParseResult parseClaudeMidiJson (const juce::String& jsonText)
         if (! parseNotesArray (root.getProperty ("notes", {}), p.notes, err, "\"notes\""))
         {
             result.error = err;
+            return result;
+        }
+    }
+
+    // Chord-bearing responses must carry explicit harmony metadata so the UI
+    // and avoidance memory are not guessing from MIDI alone.
+    {
+        bool hasChordLane = p.instrument.containsIgnoreCase ("chord");
+        for (const auto& lane : p.parts)
+            if (lane.instrument.containsIgnoreCase ("chord"))
+                hasChordLane = true;
+
+        if (hasChordLane
+            && p.progression.isEmpty()
+            && p.chordSymbols.isEmpty())
+        {
+            result.error = "Chord responses must include \"progression\" and/or \"chords\" "
+                           "(explicit harmony metadata), not only note events.";
             return result;
         }
     }

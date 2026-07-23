@@ -35,6 +35,8 @@ struct MidiPattern
     juce::String timeSignature { "4/4" };
     std::vector<PatternNote> notes;     // primary / legacy
     std::vector<MidiPatternPart> parts; // multi-instrument loop (optional)
+    juce::String progression;           // e.g. "i–VI–III–VII"
+    juce::StringArray chordSymbols;     // e.g. Fm7, Dbmaj7 per bar
 
     /** Flattened list of parts to apply (uses parts[] if set, else single lane). */
     std::vector<MidiPatternPart> lanes() const;

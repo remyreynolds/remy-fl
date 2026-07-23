@@ -56,6 +56,8 @@ private:
     bool isTypeInFocus (InstrumentType type) const;
     void generateFocusedParts();
     void generateFocusedLane();
+    void runNewIdea();
+    void reportGeneration (const GenerationReport& report, bool offerLocal);
     void exportAllTracks();
     void nudgeBpm (int delta);
     void timerCallback() override;
@@ -116,6 +118,8 @@ private:
     juce::TextButton newIdeaButton { "New idea" };   // fresh seed + generate all + critic
     juce::TextButton generateLaneButton { "Generate" };
     juce::TextButton varyLaneButton { "Vary" };
+    juce::TextButton useLocalButton { "Use local generator" };
+    juce::TextButton offlineModeButton { "Offline" };
     juce::TextButton hostSyncButton { "Host BPM" };
     juce::TextButton hostMidiButton { "MIDI out" };
     FileDragButton exportAllButton { "Export all" };
