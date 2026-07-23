@@ -87,8 +87,11 @@ juce::String MidiPattern::instrumentSummary() const
 
 juce::String chordProgressionFingerprint (const MidiPattern& pattern)
 {
+    // lanes() returns by value — keep the vector alive for the whole function
+    // so the selected lane pointer cannot dangle.
+    const auto lanes = pattern.lanes();
     const MidiPatternPart* chords = nullptr;
-    for (const auto& lane : pattern.lanes())
+    for (const auto& lane : lanes)
         if (lane.instrument.containsIgnoreCase ("chord")
             || lane.instrument.containsIgnoreCase ("pad"))
         {
@@ -115,7 +118,9 @@ juce::String chordProgressionFingerprint (const MidiPattern& pattern)
         juce::StringArray pcs;
         for (const auto pitch : pitches)
             pcs.addIfNotAlreadyThere (juce::String ((pitch % 12 + 12) % 12));
-        signature.add (juce::String (step) + ":" + juce::String (pitches.front() % 12)
+        // Pitch-class only for the bass slot too, so octave shifts don't change
+        // the fingerprint (pitches.front() % 12 is already that after sorting).
+        signature.add (juce::String (step) + ":" + juce::String ((pitches.front() % 12 + 12) % 12)
                        + "[" + pcs.joinIntoString (",") + "]");
     }
     return signature.joinIntoString ("|");
