@@ -1,4 +1,5 @@
 #include "KnowledgeBase.h"
+#include <BinaryData.h>
 #include <algorithm>
 
 namespace aimidi
@@ -37,6 +38,15 @@ void KnowledgeBase::writeStarterDocIfEmpty()
     // Prefer the shipped Groovewright master prompt from the repo when present.
     {
         const auto dest = folder().getChildFile ("master-system-prompt.md");
+        int bundledMasterSize = 0;
+        const auto* bundledMasterData = BinaryData::getNamedResource (
+            "master_system_prompt_md", bundledMasterSize);
+        const juce::String bundledMaster = bundledMasterData != nullptr
+            ? juce::String (bundledMasterData, (size_t) juce::jmax (0, bundledMasterSize))
+            : juce::String();
+        if (bundledMaster.trim().isNotEmpty())
+            dest.replaceWithText (bundledMaster);
+
         juce::File shipped;
         // Standalone / dev: look next to cwd and common relative roots
         const juce::File candidates[] = {
@@ -52,9 +62,9 @@ void KnowledgeBase::writeStarterDocIfEmpty()
         for (auto& c : candidates)
             if (c.existsAsFile()) { shipped = c; break; }
 
-        if (shipped.existsAsFile())
+        if (! dest.existsAsFile() && shipped.existsAsFile())
             shipped.copyFileTo (dest);
-        else
+        else if (! dest.existsAsFile())
             ensureDoc ("master-system-prompt.md",
 R"(# MASTER SYSTEM PROMPT — Groovewright
 

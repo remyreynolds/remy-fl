@@ -5,6 +5,7 @@
 #include "KnowledgeBase.h"
 #include <juce_core/juce_core.h>
 #include <functional>
+#include <deque>
 #include <vector>
 
 namespace aimidi
@@ -136,6 +137,8 @@ private:
     KnowledgeBase knowledgeBase;
     juce::String projectContext; // live plugin snapshot for grounding
     std::vector<Turn> history; // short conversational memory
+    std::deque<juce::String> recentChordProgressions;
+    mutable juce::CriticalSection progressionHistoryLock;
 
     void pushHistory (bool fromUser, const juce::String& text);
     juce::var buildChatMessagesBody (const juce::String& system,
@@ -162,6 +165,8 @@ private:
     static juce::String extractTextContent (const juce::String& anthropicRaw);
     static juce::String extractOpenAiTextContent (const juce::String& openAiRaw);
     static juce::String describeHttpError (int statusCode, const juce::String& body);
+    juce::String recentProgressionsForPrompt() const;
+    bool rememberProgressionIfFresh (const MidiPattern& pattern);
 };
 
 } // namespace aimidi

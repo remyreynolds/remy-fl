@@ -1,5 +1,7 @@
 #include "MidiPattern.h"
+#include <algorithm>
 #include <cmath>
+#include <map>
 
 namespace aimidi
 {
@@ -81,6 +83,42 @@ juce::String MidiPattern::instrumentSummary() const
         if (lane.instrument.isNotEmpty())
             names.addIfNotAlreadyThere (lane.instrument);
     return names.joinIntoString (", ");
+}
+
+juce::String chordProgressionFingerprint (const MidiPattern& pattern)
+{
+    const MidiPatternPart* chords = nullptr;
+    for (const auto& lane : pattern.lanes())
+        if (lane.instrument.containsIgnoreCase ("chord")
+            || lane.instrument.containsIgnoreCase ("pad"))
+        {
+            chords = &lane;
+            break;
+        }
+
+    if (chords == nullptr || chords->notes.empty())
+        return {};
+
+    // Quantize simultaneous voicings to a 1/16-note boundary, then describe
+    // each chord by bass pitch class + pitch-class set. This catches the same
+    // harmony even when Claude changes octave, velocity, or tiny timing details.
+    std::map<int, std::vector<int>> events;
+    for (const auto& note : chords->notes)
+        events[(int) std::lround (note.startBeat * 4.0)].push_back (note.pitchMidi);
+
+    juce::StringArray signature;
+    for (auto& [step, pitches] : events)
+    {
+        if (pitches.size() < 2)
+            continue;
+        std::sort (pitches.begin(), pitches.end());
+        juce::StringArray pcs;
+        for (const auto pitch : pitches)
+            pcs.addIfNotAlreadyThere (juce::String ((pitch % 12 + 12) % 12));
+        signature.add (juce::String (step) + ":" + juce::String (pitches.front() % 12)
+                       + "[" + pcs.joinIntoString (",") + "]");
+    }
+    return signature.joinIntoString ("|");
 }
 
 //==============================================================================

@@ -1,6 +1,7 @@
 #include "AIClient.h"
 #include <juce_data_structures/juce_data_structures.h>
 #include <juce_events/juce_events.h>
+#include <algorithm>
 
 namespace aimidi
 {
@@ -661,8 +662,11 @@ void AIClient::requestMidiPattern (const juce::String& userPrompt,
     const auto matchedDocs = retrieval.matchedDocs;
     const int docsUsed = matchedDocs.size();
     const auto projCtx = projectContext; // copy for thread safety
+    const auto recentProgressions = recentProgressionsForPrompt();
+    const auto variationNonce = juce::Uuid().toString();
 
-    juce::Thread::launch ([this, prompt, lockKey, knowledgeCtx, projCtx, matchedDocs, docsUsed, callback]
+    juce::Thread::launch ([this, prompt, lockKey, knowledgeCtx, projCtx, matchedDocs,
+                           docsUsed, recentProgressions, variationNonce, callback]
     {
         PatternResponse resp;
         resp.knowledgeDocsUsed = docsUsed;
@@ -680,7 +684,11 @@ void AIClient::requestMidiPattern (const juce::String& userPrompt,
                   "with chords+bass+melody+drums (add arp/pad if asked). "
                   "If they ask for one role only, use the single-part schema.\n"
                   "5) Apply key, BPM, bars, and instrument request.\n"
-                  "6) Return ONLY the MIDI JSON schema — no prose.";
+                  "6) Treat the user's text as the composition brief: translate its mood, "
+                  "imagery, energy, era, and adjectives into deliberate harmony, voicing, "
+                  "rhythm, register, tension, and note density. Do not fall back to a house "
+                  "template when the text gives creative direction.\n"
+                  "7) Return ONLY the MIDI JSON schema — no prose.";
 
         if (lockKey.isNotEmpty())
         {
@@ -692,6 +700,14 @@ void AIClient::requestMidiPattern (const juce::String& userPrompt,
         }
 
         juce::String user = prompt;
+        user << "\n\n[Variation nonce: " << variationNonce
+             << ". This is a new composition request. Make materially new musical choices; "
+                "do not reuse your default progression.]";
+        if (recentProgressions.isNotEmpty())
+            user << "\n\n===== RECENT CHORD PROGRESSIONS TO AVOID =====\n"
+                 << recentProgressions
+                 << "\n===== END RECENT PROGRESSIONS =====\n"
+                    "Choose a different harmonic route, chord rhythm, extensions, and voicing contour.";
         if (lockKey.isNotEmpty())
             user << "\n\n[Project key lock: " << lockKey
                  << " — generate ONLY in this key.]";
@@ -730,6 +746,33 @@ void AIClient::requestMidiPattern (const juce::String& userPrompt,
             resp.error = parsed.error;
             juce::MessageManager::callAsync ([callback, resp] { callback (resp); });
             return;
+        }
+
+        // One automatic retry when Claude returns harmony already heard in this
+        // session. The second prompt is explicit instead of silently accepting
+        // the familiar progression again.
+        if (! rememberProgressionIfFresh (parsed.pattern))
+        {
+            auto retryUser = user + "\n\nREJECTED: that chord progression matches a recent result. "
+                "Compose a genuinely different progression now. Change the functional root motion "
+                "and at least two of: chord rhythm, extensions, inversions, or voice-leading contour.";
+            http = postChatCompletion (system, retryUser, 8192);
+            if (! http.ok)
+            {
+                resp.ok = false;
+                resp.error = http.error;
+                juce::MessageManager::callAsync ([callback, resp] { callback (resp); });
+                return;
+            }
+            parsed = parseClaudeMidiJson (http.text);
+            if (! parsed.ok)
+            {
+                resp.ok = false;
+                resp.error = parsed.error;
+                juce::MessageManager::callAsync ([callback, resp] { callback (resp); });
+                return;
+            }
+            (void) rememberProgressionIfFresh (parsed.pattern);
         }
 
         resp.ok = true;
@@ -953,6 +996,34 @@ AIClient::Response AIClient::localFallback (const juce::String& userPrompt,
 
     resp.assistantText = "(offline) Applied a local interpretation. Add an API key for full AI.";
     return resp;
+}
+
+juce::String AIClient::recentProgressionsForPrompt() const
+{
+    const juce::ScopedLock lock (progressionHistoryLock);
+    juce::StringArray lines;
+    int number = 1;
+    for (const auto& fingerprint : recentChordProgressions)
+        lines.add (juce::String (number++) + ". " + fingerprint);
+    return lines.joinIntoString ("\n");
+}
+
+bool AIClient::rememberProgressionIfFresh (const MidiPattern& pattern)
+{
+    const auto fingerprint = chordProgressionFingerprint (pattern);
+    if (fingerprint.isEmpty())
+        return true; // bass/drum/melody-only requests have no harmony to compare
+
+    const juce::ScopedLock lock (progressionHistoryLock);
+    if (std::find (recentChordProgressions.begin(), recentChordProgressions.end(), fingerprint)
+        != recentChordProgressions.end())
+        return false;
+
+    recentChordProgressions.push_back (fingerprint);
+    constexpr size_t maxRememberedProgressions = 8;
+    while (recentChordProgressions.size() > maxRememberedProgressions)
+        recentChordProgressions.pop_front();
+    return true;
 }
 
 } // namespace aimidi

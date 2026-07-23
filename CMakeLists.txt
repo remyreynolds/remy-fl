@@ -18,6 +18,17 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(JUCE)
 
+# Ship the complete Brain prompt inside every plugin build. Runtime working
+# directories are DAW-controlled, so the prompt cannot depend on source files.
+configure_file(
+    brain/2-prompts/master-system-prompt.md
+    ${CMAKE_CURRENT_BINARY_DIR}/master_system_prompt.md
+    COPYONLY
+)
+juce_add_binary_data(AIMidiGenBrainData
+    SOURCES ${CMAKE_CURRENT_BINARY_DIR}/master_system_prompt.md
+)
+
 # ---------------------------------------------------------------------------
 # Plugin target
 # ---------------------------------------------------------------------------
@@ -75,6 +86,7 @@ target_compile_definitions(AIMidiGen PUBLIC
 )
 
 target_link_libraries(AIMidiGen PRIVATE
+    AIMidiGenBrainData
     juce::juce_audio_utils
     juce::juce_audio_plugin_client
     juce::juce_dsp

@@ -76,6 +76,10 @@ void applyKeyStringToParams (const juce::String& key, MusicParams& params);
 /** MIDI note number → "C3", "F#2", etc. */
 juce::String midiToNoteName (int midiNote);
 
+/** Compact harmony signature used to detect repeated AI chord progressions.
+    Empty when the pattern has no chord lane. */
+juce::String chordProgressionFingerprint (const MidiPattern& pattern);
+
 /** Compact note dump for AI continue/vary prompts. */
 juce::String serializePartAsMidiContext (const GeneratedPart& part,
                                          const MusicParams& params,

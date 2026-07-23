@@ -1,5 +1,16 @@
 # AI MIDI Gen — Development Log
 
+## 2026-07-22 — Brain-led harmony variation
+
+- Bundled the full master Brain prompt into the plugin binary so Claude receives
+  it regardless of the DAW's working directory.
+- Every AI generation now carries a unique variation nonce and explicit rules
+  that translate descriptive text into harmony, rhythm, register, voicing,
+  tension, and density.
+- Added an eight-result chord-progression memory. Recent harmonic fingerprints
+  are sent to Claude as exclusions, and an exact repeat triggers one automatic
+  recomposition request before the MIDI is accepted.
+
 ## Phase 1 — Foundation  (status: scaffolded, pending first compile)
 
 ### Architecture decisions

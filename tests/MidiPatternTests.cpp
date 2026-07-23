@@ -48,6 +48,8 @@ int main()
     expect (ok.pattern.notes.size() == 3, "3 notes");
     expect (ok.pattern.notes[0].pitchMidi == 33, "first note A1");
     expect (ok.pattern.lanes().size() == 1, "single-part has one lane");
+    expect (chordProgressionFingerprint (ok.pattern).isEmpty(),
+            "bass-only pattern has no chord fingerprint");
 
     auto seq = patternToSequence (ok.pattern, 960);
     int noteOns = 0, noteOffs = 0;
@@ -96,6 +98,14 @@ int main()
     expect (loop.pattern.totalNotes() == 5, "5 total notes");
     expect (loop.pattern.instrumentSummary().contains ("chords"), "summary includes chords");
     expect (loop.pattern.instrumentSummary().contains ("bass"), "summary includes bass");
+    const auto harmony = chordProgressionFingerprint (loop.pattern);
+    expect (harmony.isNotEmpty(), "chord lane gets a progression fingerprint");
+
+    auto octaveShifted = loop.pattern;
+    for (auto& note : octaveShifted.parts.front().notes)
+        note.pitchMidi += 12;
+    expect (chordProgressionFingerprint (octaveShifted) == harmony,
+            "fingerprint ignores octave-only voicing changes");
 
     // --- invalid JSON ---
     auto bad = parseClaudeMidiJson ("{ not json");
