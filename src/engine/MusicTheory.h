@@ -45,17 +45,20 @@ namespace theory
         Guarantees output is always in-key — the theory validator's backbone. */
     inline int snapToScale (int midiNote, int rootPc, const std::vector<int>& intervals)
     {
-        const int octave = midiNote / 12;
-        const int pc     = ((midiNote % 12) - rootPc + 12) % 12;
+        // Circular pitch-class distance: a note 1 semitone below the root must
+        // snap UP to the root, not down to the 7th; and the result must stay in
+        // the note's own register (no %12 octave jumps).
+        const int pc = ((midiNote % 12) - rootPc + 12) % 12;
 
-        int best = intervals.front();
-        int bestDist = 128;
+        int bestDelta = 0, bestDist = 128;
         for (int iv : intervals)
         {
-            int d = std::abs (iv - pc);
-            if (d < bestDist) { bestDist = d; best = iv; }
+            int d = iv - pc;
+            if (d > 6)  d -= 12;   // wrap to [-6, +6]
+            if (d < -6) d += 12;
+            if (std::abs (d) < bestDist) { bestDist = std::abs (d); bestDelta = d; }
         }
-        return octave * 12 + ((rootPc + best) % 12);
+        return midiNote + bestDelta;
     }
 
     // Build a stacked-thirds chord rooted on a scale degree, in-key.
@@ -72,7 +75,9 @@ namespace theory
             const int scaleIdx = degree + i * 2;
             const int oct      = scaleIdx / (int) intervals.size();
             const int iv       = intervals[(size_t) (scaleIdx % (int) intervals.size())];
-            notes.push_back (baseOctave + oct * 12 + ((rootPc + iv) % 12));
+            // No %12 here: intervals crossing the octave must keep ascending
+            // (stacked thirds), not fold back into a cluster.
+            notes.push_back (baseOctave + oct * 12 + rootPc + iv);
         }
         return notes;
     }
@@ -94,7 +99,11 @@ namespace theory
         }
 
         std::sort (next.begin(), next.end());
-        next.erase (std::unique (next.begin(), next.end()), next.end());
+        // Don't DELETE tones that collapsed onto the same pitch (that shrank
+        // 9th/11th chords to triads) — re-spread them up an octave instead.
+        for (size_t i = 1; i < next.size(); ++i)
+            while (next[i] <= next[i - 1])
+                next[i] += 12;
         return next;
     }
 
