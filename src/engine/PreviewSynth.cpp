@@ -1,16 +1,18 @@
 #include "PreviewSynth.h"
 #include <cmath>
+#include <cstdint>
 
 namespace aimidi
 {
 
 namespace
 {
-float nextNoise (float& state)
+float nextNoise (std::uint32_t& state)
 {
-    state = state * 1103515245.0f + 12345.0f;
-    const int bits = (int) state;
-    return ((bits >> 16) & 0x7fff) / 16384.0f - 1.0f;
+    // Integer LCG (rand48-family constants). The old float version overflowed
+    // float precision instantly and hit UB casting out-of-range floats to int.
+    state = state * 1103515245u + 12345u;
+    return (float) ((state >> 16) & 0x7fffu) / 16384.0f - 1.0f;
 }
 
 float polyBlep (double t, double dt)
@@ -67,14 +69,16 @@ PreviewSynth::PreviewSynth()
     for (int i = 0; i < kPitchedParts; ++i)
     {
         pitched[(size_t) i].addSound (pitchedSound);
+        // Generous polyphony: chord/pad lanes hold long overlapping voicings and
+        // voice-stealing hard-cuts click (steal path has no release tail).
         const int voices = (pitchedTypes[i] == InstrumentType::Chords
-                            || pitchedTypes[i] == InstrumentType::Pad) ? 12 : 8;
+                            || pitchedTypes[i] == InstrumentType::Pad) ? 24 : 12;
         for (int v = 0; v < voices; ++v)
             pitched[(size_t) i].addVoice (new PitchedVoice (*this, pitchedTypes[i]));
     }
 
     drums.addSound (drumSound);
-    for (int i = 0; i < 8; ++i)
+    for (int i = 0; i < 16; ++i)
         drums.addVoice (new DrumVoice (*this));
 }
 
@@ -147,6 +151,8 @@ PartTimbre PreviewSynth::getPartTimbre (InstrumentType type) const
 
 void PreviewSynth::render (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
+    juce::ScopedNoDenormals noDenormals; // decaying envelopes/filters otherwise
+                                         // hit denormal range and spike the CPU
     std::array<juce::MidiBuffer, kPitchedParts> partMidi;
     juce::MidiBuffer kit;
 
@@ -187,15 +193,24 @@ void PreviewSynth::render (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& m
 
         const float depth   = 0.55f; // max gain reduction under the kick
         const float recover = (float) std::exp (-1.0 / (duckSampleRate * 0.110)); // ~110ms release
+        // ~3ms attack ramp: a one-sample jump to full duck is a 55% gain step
+        // and clicks audibly on every kick.
+        const float attack  = 1.0f - (float) std::exp (-1.0 / (duckSampleRate * 0.003));
         float env = duckEnv;
+        float target = 0.0f;
         int nextKick = 0;
 
         for (int i = 0; i < numSamples; ++i)
         {
             while (nextKick < numKicks && kickPos[nextKick] <= i)
             {
-                env = 1.0f;
+                target = 1.0f;
                 ++nextKick;
+            }
+            if (target > env)
+            {
+                env += (target - env) * attack;
+                if (env > 0.999f) { env = 1.0f; target = 0.0f; } // reached — release phase
             }
             const float g = 1.0f - depth * env;
             for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
@@ -258,12 +273,17 @@ void PreviewSynth::PitchedVoice::startNote (int midiNote, float velocity,
         const juce::SpinLock::ScopedLockType sl (owner.sampleLock);
         sample = owner.partSamples[(size_t) part];
     }
+    // One-pole attack coefficient from a time constant, so envelopes sound
+    // the same at 44.1k / 48k / 96k instead of speeding up with sample rate.
+    auto atkCoef = [this] (double seconds)
+    { return (float) (1.0 - std::exp (-1.0 / (juce::jmax (1.0, sampleRate) * seconds))); };
+
     if (sample != nullptr && sample->buffer.getNumSamples() > 0)
     {
         useSample = true;
         const double pitchRatio = std::pow (2.0, (midiNote - kSampleRootMidi) / 12.0);
         sampleInc = pitchRatio * (sample->sampleRate / juce::jmax (1.0, sampleRate));
-        attack = 0.25f;
+        attack = atkCoef (0.00008);
         envDecay = (float) std::exp (-1.0 / (sampleRate * 1.4));
         return;
     }
@@ -277,39 +297,39 @@ void PreviewSynth::PitchedVoice::startNote (int midiNote, float velocity,
     {
         case PartTimbre::WarmPad:
         case PartTimbre::Strings:
-            attack = 0.015f;
+            attack = atkCoef (0.0015); // slow pad swell
             {
                 const double decaySec = juce::jmap ((double) midiNote, 24.0, 96.0, 4.5, 1.8);
                 envDecay = (float) std::exp (-1.0 / (sampleRate * decaySec));
             }
             break;
         case PartTimbre::Pluck:
-            attack = 0.35f;
+            attack = atkCoef (0.00005);
             envDecay = (float) std::exp (-1.0 / (sampleRate * 0.35));
             break;
         case PartTimbre::Sub808:
         case PartTimbre::HouseBass:
         case PartTimbre::AcousticBass:
-            attack = 0.18f;
+            attack = atkCoef (0.00011);
             envDecay = (float) std::exp (-1.0 / (sampleRate * (timbre == PartTimbre::Sub808 ? 0.9 : 0.55)));
             break;
         case PartTimbre::HousePiano:
-            attack = 0.22f;
+            attack = atkCoef (0.00009);
             envDecay = (float) std::exp (-1.0 / (sampleRate * juce::jmap ((double) midiNote, 24.0, 96.0, 1.4, 0.35)));
             break;
         case PartTimbre::ClassicPiano:
-            attack = 0.12f;
+            attack = atkCoef (0.00018);
             envDecay = (float) std::exp (-1.0 / (sampleRate * juce::jmap ((double) midiNote, 24.0, 96.0, 3.2, 0.7)));
             break;
         case PartTimbre::ChordSynth:
         case PartTimbre::BrightLead:
-            attack = 0.20f;
+            attack = atkCoef (0.0001);
             envDecay = (float) std::exp (-1.0 / (sampleRate * 1.1));
             break;
         case PartTimbre::SuperSaw:
             // Serum-style stab/lead: fast attack, musical decay, filter env
             // opens with velocity and sweeps shut for that "juicy" front.
-            attack = 0.30f;
+            attack = atkCoef (0.00006);
             envDecay  = (float) std::exp (-1.0 / (sampleRate * 1.6));
             fltDecay  = (float) std::exp (-1.0 / (sampleRate * 0.22));
             fltBaseHz = 420.0f;
@@ -319,7 +339,7 @@ void PreviewSynth::PitchedVoice::startNote (int midiNote, float velocity,
         case PartTimbre::FilterBass:
             // Classic house bass: punchy filter sweep, tight amp decay.
             freq2 = freq * 0.5; // sub square one octave DOWN
-            attack = 0.5f;
+            attack = atkCoef (0.00003);
             envDecay  = (float) std::exp (-1.0 / (sampleRate * 0.38));
             fltDecay  = (float) std::exp (-1.0 / (sampleRate * 0.11));
             fltBaseHz = 90.0f;
@@ -328,12 +348,12 @@ void PreviewSynth::PitchedVoice::startNote (int midiNote, float velocity,
             break;
         case PartTimbre::OrganBass:
             // M1-style organ bass: instant on, sustained while held.
-            attack = 0.6f;
+            attack = atkCoef (0.000025); // near-instant organ key-on
             envDecay = (float) std::exp (-1.0 / (sampleRate * 2.5));
             break;
         case PartTimbre::SoftPiano:
         default:
-            attack = 0.10f;
+            attack = atkCoef (0.0002);
             envDecay = (float) std::exp (-1.0 / (sampleRate * juce::jmap ((double) midiNote, 24.0, 96.0, 2.6, 0.55)));
             break;
     }
@@ -598,7 +618,7 @@ void PreviewSynth::DrumVoice::startNote (int midiNote, float velocity,
     phaseB = phaseC = 0.0;
     env = 1.0f;
     age = 0;
-    noise = 1.0f;
+    noise = 1u + (std::uint32_t) age; // any nonzero seed works
     kit = (DrumKitStyle) owner.getDrumKitStyle();
     kickBoom = 0.0f;
     useSample = false;

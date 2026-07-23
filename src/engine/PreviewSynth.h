@@ -4,6 +4,7 @@
 #include "SampleLibrary.h"
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <array>
+#include <cstdint>
 #include <atomic>
 #include <memory>
 
@@ -110,7 +111,8 @@ private:
         double sampleRate = 44100.0;
         double phase = 0.0, freq = 100.0;
         double phaseB = 0.0, phaseC = 0.0; // metallic hat partials (909-style)
-        float level = 0.0f, env = 0.0f, envDecay = 0.0f, noise = 1.0f;
+        float level = 0.0f, env = 0.0f, envDecay = 0.0f;
+        std::uint32_t noise = 1u; // integer LCG state (see nextNoise)
         float kickBoom = 0.0f;
         int age = 0;
 
