@@ -68,18 +68,20 @@ GeneratedPart MidiGenerator::generateChordsWithMode (const MusicParams& p,
         {
             case ChordMode::Sustained:
                 for (int n : chord)
-                    part.notes.push_back ({ b0, 3.9, n, 0.65f });
+                    part.notes.push_back ({ b0, 3.9, n, 0.62f + rand01() * 0.08f });
                 break;
 
             case ChordMode::Stabs:
             {
-                // Sparse, punchy hits — extra syncopated hit at high energy.
+                // Sparse, punchy hits — timing/velocity take a little seed-driven air
+                // so regenerating never pastes the exact same MIDI blob.
+                const double hitch = (rand01() - 0.5) * 0.04;
                 for (int n : chord)
                 {
-                    part.notes.push_back ({ b0,        0.4, n, 0.8f });
-                    part.notes.push_back ({ b0 + 2.5,  0.35, n, 0.7f });
+                    part.notes.push_back ({ b0 + hitch,        0.4, n, 0.75f + rand01() * 0.1f });
+                    part.notes.push_back ({ b0 + 2.5 + hitch,  0.35, n, 0.65f + rand01() * 0.1f });
                     if (p.energy > 0.65f)
-                        part.notes.push_back ({ b0 + 1.75, 0.3, n, 0.6f });
+                        part.notes.push_back ({ b0 + 1.75 + hitch, 0.3, n, 0.55f + rand01() * 0.1f });
                 }
                 break;
             }

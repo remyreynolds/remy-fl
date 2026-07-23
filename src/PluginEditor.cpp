@@ -86,18 +86,17 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
     refreshBpmLabel();
 
     generateAllButton.setComponentID ("ghost");
-    generateAllButton.setTooltip ("Generate all unlocked parts");
+    generateAllButton.setTooltip ("Generate all unlocked parts locally (no API). Ask in Chat to use Claude.");
     generateAllButton.onClick = [this] { generateFocusedParts(); };
     generateSurface.addAndMakeVisible (generateAllButton);
 
     newIdeaButton.setComponentID ("ghost");
-    newIdeaButton.setTooltip ("Roll a completely fresh idea: new seed, regenerate every "
-                              "unlocked lane via Claude+Brain when connected (or local offline).");
+    newIdeaButton.setTooltip ("Roll a fresh local idea: new seed, regenerate unlocked lanes.");
     newIdeaButton.onClick = [this] { runNewIdea(); };
-    generateSurface.addAndMakeVisible (newIdeaButton);
+    settingsSurface.addAndMakeVisible (newIdeaButton);
 
     generateLaneButton.setComponentID ("hero"); // only glowing primary per v4
-    generateLaneButton.setTooltip ("Generate the focused instrument lane (Claude+Brain when connected)");
+    generateLaneButton.setTooltip ("Generate the focused lane locally (no API). Ask in Chat to use Claude.");
     generateLaneButton.onClick = [this] { generateFocusedLane(); };
     generateSurface.addAndMakeVisible (generateLaneButton);
 
@@ -132,6 +131,7 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
     };
     generateSurface.addAndMakeVisible (varyLaneButton);
 
+    // Offline / local controls live on Settings so the Generate rail matches v4.
     useLocalButton.setComponentID ("ghost");
     useLocalButton.setTooltip ("After a Claude failure, run the local SongPlan generator instead");
     useLocalButton.setEnabled (false);
@@ -145,22 +145,23 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
             safe->refreshPanels();
         });
     };
-    generateSurface.addAndMakeVisible (useLocalButton);
+    settingsSurface.addAndMakeVisible (useLocalButton);
+    useLocalButton.setVisible (false);
 
     offlineModeButton.setComponentID ("ghost");
     offlineModeButton.setClickingTogglesState (true);
-    offlineModeButton.setTooltip ("Force the local SongPlan engine (skip Claude even if a key is set)");
+    offlineModeButton.setTooltip ("When on, Chat also skips Claude and stays fully local");
     offlineModeButton.setToggleState (processor.prefersOfflineGeneration(),
                                       juce::dontSendNotification);
     offlineModeButton.onClick = [this]
     {
         processor.setPreferOfflineGeneration (offlineModeButton.getToggleState());
         chatPanel.addAssistantMessage (offlineModeButton.getToggleState()
-            ? "Offline mode on — Generate / New Idea use the local engine only."
-            : "Offline mode off — Generate / New Idea use Claude + Brain when a key is set.");
+            ? "Offline mode on — Chat will not call Claude either."
+            : "Offline mode off — Chat can use Claude when you ask it to generate.");
         refreshProviderUi();
     };
-    generateSurface.addAndMakeVisible (offlineModeButton);
+    settingsSurface.addAndMakeVisible (offlineModeButton);
 
     hostSyncButton.setComponentID ("ghost");
     hostSyncButton.setClickingTogglesState (true);
@@ -418,7 +419,7 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
                 safe->refreshPanels();
             });
     };
-    generateSurface.addAndMakeVisible (dnaButton);
+    settingsSurface.addAndMakeVisible (dnaButton);
 
     soundLabel.setText ("Genre", juce::dontSendNotification);
     soundLabel.setFont (CustomLookAndFeel::font (11.5f, juce::Font::bold));
@@ -1588,7 +1589,22 @@ void AIMidiGenEditor::applyWorkspaceFocus()
 
 void AIMidiGenEditor::reportGeneration (const GenerationReport& report, bool offerLocal)
 {
-    useLocalButton.setEnabled (offerLocal && processor.hasPendingLocalOffer());
+    const bool showLocal = offerLocal && processor.hasPendingLocalOffer();
+    useLocalButton.setVisible (showLocal);
+    useLocalButton.setEnabled (showLocal);
+    if (showLocal)
+    {
+        // Temporarily surface on the Generate rail under Vary (v4 keeps this empty otherwise).
+        auto rail = rightCardBounds.reduced (14, 16);
+        // Approximate: after Genre(14+36+10) + Generate(44+8) + All(40+8) + Vary(40+8) + Undo(40)
+        const int y = rail.getY() + 14 + 36 + 10 + 44 + 8 + 40 + 8 + 40 + 8 + 40 + 10;
+        useLocalButton.setBounds (rail.getX(), y, rail.getWidth(), 36);
+        generateSurface.addAndMakeVisible (useLocalButton);
+    }
+    else
+    {
+        settingsSurface.addAndMakeVisible (useLocalButton);
+    }
 
     if (report.mode == GenerationMode::FailedClaude)
     {
@@ -1925,7 +1941,7 @@ void AIMidiGenEditor::resized()
     exportAllButton.setBounds (footer.removeFromRight (100).withSizeKeepingCentre (100, 36));
     footer.removeFromRight (8);
     previewButton.setBounds (footer.removeFromRight (104).withSizeKeepingCentre (104, 36));
-    previewButton.setComponentID ("primary");
+    previewButton.setComponentID ("hero"); // only glowing primary in footer per v4
     footer.removeFromRight (8);
     hostMidiButton.setBounds (footer.removeFromRight (86).withSizeKeepingCentre (86, 36));
     footer.removeFromRight (6);
@@ -1969,21 +1985,18 @@ void AIMidiGenEditor::layoutGenerateSurface()
         rail.removeFromTop (8);
         varyLaneButton.setBounds (rail.removeFromTop (40));
         rail.removeFromTop (8);
-        useLocalButton.setBounds (rail.removeFromTop (36));
-        rail.removeFromTop (6);
-        offlineModeButton.setBounds (rail.removeFromTop (32));
-        rail.removeFromTop (8);
         undoButton.setBounds (rail.removeFromTop (40));
-        rail.removeFromTop (8);
-        newIdeaButton.setBounds (rail.removeFromTop (36));
-        rail.removeFromTop (6);
-        if (dnaButton.isVisible())
-            dnaButton.setBounds (rail.removeFromTop (36));
 
-        // LAST RUN pinned to bottom
+        // LAST RUN pinned to bottom (v4)
         auto meta = rail.removeFromBottom (72);
         lastRunTitle.setBounds (meta.removeFromTop (16));
         lastRunMeta.setBounds (meta);
+
+        // Extra generation tools live on Settings — clear leftover rail slots
+        newIdeaButton.setBounds ({});
+        dnaButton.setBounds ({});
+        useLocalButton.setBounds ({});
+        offlineModeButton.setBounds ({});
     }
 
     auto leftOuter = r.removeFromLeft (308);
@@ -2111,6 +2124,20 @@ void AIMidiGenEditor::layoutSettingsSurface()
     apiKeyLabel.setBounds (row3.removeFromLeft (70));
     row3.removeFromLeft (6);
     apiKeyField.setBounds (row3.removeFromLeft (260));
+    r.removeFromTop (gap + 8);
+
+    // Generation extras (kept off the v4 Generate rail)
+    auto tools = r.removeFromTop (28);
+    tools.removeFromLeft (70);
+    offlineModeButton.setBounds (tools.removeFromLeft (100).reduced (0, 1));
+    tools.removeFromLeft (8);
+    useLocalButton.setBounds (tools.removeFromLeft (160).reduced (0, 1));
+    r.removeFromTop (gap);
+    auto tools2 = r.removeFromTop (28);
+    tools2.removeFromLeft (70);
+    newIdeaButton.setBounds (tools2.removeFromLeft (120).reduced (0, 1));
+    tools2.removeFromLeft (8);
+    dnaButton.setBounds (tools2.removeFromLeft (120).reduced (0, 1));
 }
 
 void AIMidiGenEditor::syncEffectiveMutes()

@@ -116,10 +116,12 @@ public:
 
         if (ghost || icon)
         {
-            juce::Colour fill = juce::Colour (0x0fffffff);
+            // Toggle-on for ghost chrome stays quiet (v4 Host BPM / MIDI out).
+            // Accent fill is reserved for hero Generate / Preview / primary actions.
+            juce::Colour fill = juce::Colour (0x12ffffff);
             if (down)      fill = juce::Colour (0x24ffffff);
             else if (over) fill = juce::Colour (0x1cffffff);
-            else if (on)   fill = accent;
+            else if (on)   fill = juce::Colour (0x22ffffff);
             g.setColour (fill);
             g.fillRoundedRectangle (r, 6.0f);
             return;
