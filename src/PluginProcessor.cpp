@@ -508,6 +508,11 @@ void AIMidiGenProcessor::pushUndoSnapshot()
     snap.params = projectParams;
     snap.parts = parts;
     snap.drumKit = drumKit;
+    snap.genreMode = genreMode;
+    snap.partTimbres = partTimbres;
+    snap.partGains = partGains;
+    snap.drumGains = drumGains;
+    snap.criticSummary = criticSummary;
     undoStack.push_back (std::move (snap));
     constexpr size_t kMax = 20;
     if (undoStack.size() > kMax)
@@ -525,6 +530,12 @@ bool AIMidiGenProcessor::undoLastGeneration()
     projectParams = snap.params;
     parts = std::move (snap.parts);
     drumKit = std::move (snap.drumKit);
+    genreMode = snap.genreMode;
+    partTimbres = snap.partTimbres;
+    partGains = snap.partGains;
+    drumGains = snap.drumGains;
+    criticSummary = snap.criticSummary;
+    syncPreviewSounds();
     rebuildDrumMasterPart();
     rebuildPreviewSequences();
     return true;
@@ -555,8 +566,12 @@ void AIMidiGenProcessor::applyMidiPattern (MidiPattern& pattern, juce::String& e
 
     pushUndoSnapshot();
 
-    projectParams.bpm  = pattern.bpm;
-    projectParams.bars = pattern.bars;
+    // Adopt tempo/length only when the pattern carries sane values — never
+    // let a malformed AI reply silently trash the project tempo.
+    if (pattern.bpm > 0.0)
+        setBpm (pattern.bpm);
+    if (pattern.bars > 0)
+        projectParams.bars = juce::jlimit (1, 32, pattern.bars);
     pattern.key = juce::String (formatKeyString (projectParams));
 
     juce::StringArray applied;
@@ -576,11 +591,32 @@ void AIMidiGenProcessor::applyMidiPattern (MidiPattern& pattern, juce::String& e
 
         if (type == InstrumentType::Drums)
         {
-            auto& kick = drumKit[(size_t) DrumPiece::Kick];
-            if (! kick.locked)
+            // Split the AI drum lane into the kit by GM pitch, so each piece
+            // (kick/snare/hats/perc) gets ITS notes — not everything into Kick.
+            for (int dp = 0; dp < (int) DrumPiece::NumPieces; ++dp)
             {
-                kick = dest;
-                kick.type = InstrumentType::Drums;
+                auto& piece = drumKit[(size_t) dp];
+                if (piece.locked)
+                    continue;
+                piece.notes.clear();
+                piece.type = InstrumentType::Drums;
+                const int gmNote = drumPieceMidiNote ((DrumPiece) dp);
+                for (const auto& n : dest.notes)
+                    if (n.pitch == gmNote)
+                        piece.notes.push_back (n);
+            }
+            // Anything on an unmapped GM pitch lands in the closest piece: kick.
+            {
+                auto& kick = drumKit[(size_t) DrumPiece::Kick];
+                if (! kick.locked)
+                    for (const auto& n : dest.notes)
+                    {
+                        bool mapped = false;
+                        for (int dp = 0; dp < (int) DrumPiece::NumPieces && ! mapped; ++dp)
+                            mapped = (n.pitch == drumPieceMidiNote ((DrumPiece) dp));
+                        if (! mapped)
+                            kick.notes.push_back (n);
+                    }
             }
             rebuildDrumMasterPart();
         }
@@ -610,9 +646,9 @@ void AIMidiGenProcessor::generatePart (InstrumentType t, bool recordUndo)
     rebuildPreviewSequences();
 }
 
-void AIMidiGenProcessor::generateAllParts()
+void AIMidiGenProcessor::generateAllParts (bool recordUndo)
 {
-    pushUndoSnapshot();
+    if (recordUndo) pushUndoSnapshot();
     for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
         generatePart ((InstrumentType) t, false);
 }
@@ -1151,6 +1187,10 @@ bool AIMidiGenProcessor::tryLocalChatCommand (const juce::String& text,
 
     juce::StringArray done;
 
+    // One undo snapshot BEFORE any mutation, so "undo" reverts the param
+    // changes (style/key/tempo/dials) as well as the regenerated notes.
+    pushUndoSnapshot();
+
     // ---- Parameter changes first, so any generation below uses them ----
     if (! intent.genre.empty())
     {
@@ -1206,7 +1246,7 @@ bool AIMidiGenProcessor::tryLocalChatCommand (const juce::String& text,
         case CA::NewIdea:
         case CA::GenerateAll:
             freshSeed();
-            generateAllParts(); // one undo snapshot, skips locked lanes
+            generateAllParts (false); // snapshot already taken above
             out.generatedMidi = true;
             done.add (intent.action == CA::NewIdea ? "rolled a fresh idea"
                                                    : "regenerated all unlocked lanes");
@@ -1215,8 +1255,7 @@ bool AIMidiGenProcessor::tryLocalChatCommand (const juce::String& text,
         case CA::Generate:
         case CA::Vary:
         {
-            pushUndoSnapshot();
-            freshSeed();
+            freshSeed(); // snapshot already taken above
             juce::StringArray names;
             for (auto lane : intent.lanes)
             {
@@ -1256,13 +1295,16 @@ bool AIMidiGenProcessor::tryLocalChatCommand (const juce::String& text,
             out.generatedMidi = true;
             done.add ((intent.action == CA::Vary ? "varied " : "regenerated ")
                       + names.joinIntoString (" + "));
+            // If every target was locked, nothing above rebuilt the preview —
+            // but tempo/key/dial changes still applied. Keep playback in sync.
+            rebuildPreviewSequences();
             break;
         }
 
         case CA::AdjustOnly:
             if (intent.paramChangeWantsRegen())
             {
-                generateAllParts(); // pushes its own undo snapshot
+                generateAllParts (false); // snapshot already taken above
                 out.generatedMidi = true;
                 done.add ("regenerated unlocked lanes to match");
             }
@@ -1426,6 +1468,9 @@ void AIMidiGenProcessor::rebuildDrumMasterPart()
 //==============================================================================
 void AIMidiGenProcessor::rebuildPreviewSequences()
 {
+    // MESSAGE THREAD. Refresh the audio-thread mirrors first.
+    liveBpm.store (projectParams.bpm);
+    liveBars.store (projectParams.bars);
     const juce::ScopedLock sl (processLock);
     for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
         previewSeqs[(size_t) t] = MidiGenerator::toSequence (parts[(size_t) t],
@@ -1443,6 +1488,7 @@ void AIMidiGenProcessor::rebuildPreviewSequences()
 void AIMidiGenProcessor::setBpm (double bpm)
 {
     projectParams.bpm = juce::jlimit (40.0, 240.0, bpm);
+    liveBpm.store (projectParams.bpm); // audio-thread mirror follows immediately
 }
 
 void AIMidiGenProcessor::setHostTempoSync (bool shouldSync)
@@ -1484,13 +1530,31 @@ bool AIMidiGenProcessor::getHostTransport (bool& isPlaying, double& ppqPosition,
 
 void AIMidiGenProcessor::pullHostTempoIfNeeded()
 {
+    // AUDIO THREAD. Never writes projectParams — updates the atomic mirror and
+    // asks the message thread to adopt it (handleAsyncUpdate).
     if (! hostTempoSync.load())
         return;
 
     bool playing = false;
-    double ppq = 0.0, bpm = projectParams.bpm;
+    double ppq = 0.0, bpm = liveBpm.load();
     if (getHostTransport (playing, ppq, bpm) && bpm > 0.0)
-        projectParams.bpm = juce::jlimit (40.0, 240.0, bpm);
+    {
+        const double clamped = juce::jlimit (40.0, 240.0, bpm);
+        if (std::abs (clamped - liveBpm.load()) > 0.01)
+        {
+            liveBpm.store (clamped);
+            triggerAsyncUpdate(); // message thread copies into projectParams
+        }
+    }
+}
+
+void AIMidiGenProcessor::handleAsyncUpdate()
+{
+    // MESSAGE THREAD. Adopt host tempo + service audio-thread rebuild requests.
+    if (hostTempoSync.load())
+        projectParams.bpm = liveBpm.load();
+    if (seqRebuildRequested.exchange (false))
+        rebuildPreviewSequences();
 }
 
 void AIMidiGenProcessor::togglePreview (bool shouldPlay)
@@ -1508,9 +1572,13 @@ void AIMidiGenProcessor::togglePreview (bool shouldPlay)
 void AIMidiGenProcessor::collectMidiForPpqWindow (juce::MidiBuffer& dest, int numSamples,
                                                   double startPpqInLoop, double ppqPerSample)
 {
-    const juce::ScopedLock sl (processLock);
+    // AUDIO THREAD. Try-lock: if the message thread is mid-rebuild, skip this
+    // block instead of blocking the audio callback (priority inversion).
+    const juce::ScopedTryLock sl (processLock);
+    if (! sl.isLocked())
+        return;
     const double ticksPerQ = MidiGenerator::ticksPerQuarter;
-    const double loopLenQ  = projectParams.bars * 4.0;
+    const double loopLenQ  = liveBars.load() * 4.0;
 
     for (int s = 0; s < numSamples; ++s)
     {
@@ -1576,9 +1644,10 @@ void AIMidiGenProcessor::collectMidiForPpqWindow (juce::MidiBuffer& dest, int nu
 
 void AIMidiGenProcessor::collectPreviewMidi (juce::MidiBuffer& dest, int numSamples)
 {
-    const double bpm          = projectParams.bpm;
+    // AUDIO THREAD — read only the atomic mirrors, never projectParams.
+    const double bpm          = liveBpm.load();
     const double ppqPerSample = bpm / (60.0 * sampleRateHz);
-    const double loopLenQ     = projectParams.bars * 4.0;
+    const double loopLenQ     = liveBars.load() * 4.0;
     double pos = previewPpqPos.load();
 
     collectMidiForPpqWindow (dest, numSamples, pos, ppqPerSample);
@@ -1604,22 +1673,29 @@ void AIMidiGenProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     if (! internalPreview && ! emitHostMidi)
         return;
 
-    // Keep sequences warm for host MIDI out without requiring Preview first
-    if (emitHostMidi && previewSeqs[0].getNumEvents() == 0
-        && parts[0].notes.empty() == false)
-        rebuildPreviewSequences();
-    else if (emitHostMidi)
+    // Keep sequences warm for host MIDI out without requiring Preview first.
+    // NEVER rebuild on the audio thread — request it from the message thread.
+    if (emitHostMidi)
     {
-        // Rebuild if empty so host play still works after generate
         bool anySeq = false;
-        for (auto& s : previewSeqs) if (s.getNumEvents() > 0) { anySeq = true; break; }
-        for (auto& s : drumPreviewSeqs) if (s.getNumEvents() > 0) { anySeq = true; break; }
+        {
+            const juce::ScopedTryLock stl (processLock);
+            if (! stl.isLocked())
+                return; // message thread is rebuilding right now — skip block
+            for (auto& s : previewSeqs)     if (s.getNumEvents() > 0) { anySeq = true; break; }
+            if (! anySeq)
+                for (auto& s : drumPreviewSeqs) if (s.getNumEvents() > 0) { anySeq = true; break; }
+        }
         if (! anySeq)
-            rebuildPreviewSequences();
+        {
+            seqRebuildRequested.store (true);
+            triggerAsyncUpdate();
+            return; // sequences will be ready within a block or two
+        }
     }
 
     juce::MidiBuffer previewMidi;
-    const double loopLenQ = projectParams.bars * 4.0;
+    const double loopLenQ = liveBars.load() * 4.0;
 
     if (emitHostMidi)
     {
@@ -1652,6 +1728,43 @@ juce::AudioProcessorEditor* AIMidiGenProcessor::createEditor()
 }
 
 //==============================================================================
+namespace
+{
+// Notes serialize as a flat number array [start,len,pitch,vel, ...] — compact
+// and version-stable.
+juce::var notesToVar (const std::vector<NoteEvent>& notes)
+{
+    juce::Array<juce::var> a;
+    a.ensureStorageAllocated ((int) notes.size() * 4);
+    for (const auto& n : notes)
+    {
+        a.add (n.startBeats);
+        a.add (n.lengthBeats);
+        a.add (n.pitch);
+        a.add ((double) n.velocity);
+    }
+    return a;
+}
+
+void varToNotes (const juce::var& v, std::vector<NoteEvent>& out)
+{
+    out.clear();
+    if (auto* a = v.getArray())
+    {
+        out.reserve ((size_t) (a->size() / 4));
+        for (int i = 0; i + 3 < a->size(); i += 4)
+        {
+            NoteEvent n;
+            n.startBeats  = (double) a->getUnchecked (i);
+            n.lengthBeats = (double) a->getUnchecked (i + 1);
+            n.pitch       = (int)    a->getUnchecked (i + 2);
+            n.velocity    = (float) (double) a->getUnchecked (i + 3);
+            out.push_back (n);
+        }
+    }
+}
+} // namespace
+
 void AIMidiGenProcessor::getStateInformation (juce::MemoryBlock& dest)
 {
     auto* root = new juce::DynamicObject();
@@ -1664,7 +1777,42 @@ void AIMidiGenProcessor::getStateInformation (juce::MemoryBlock& dest)
     root->setProperty ("octave", p.octave);
     root->setProperty ("energy", p.energy);
     root->setProperty ("complexity", p.complexity);
+    root->setProperty ("swing", p.swing);
+    root->setProperty ("humanize", p.humanize);
+    root->setProperty ("noteDensity", p.noteDensity);
+    root->setProperty ("rhythmComplexity", p.rhythmComplexity);
+    root->setProperty ("chordComplexity", p.chordComplexity);
+    root->setProperty ("seed", (juce::int64) p.seed);
+    root->setProperty ("hostTempoSync", hostTempoSync.load());
+    root->setProperty ("hostMidiOut", hostMidiOut.load());
+    root->setProperty ("previewAudition", previewAudition.load());
+    root->setProperty ("criticSummary", criticSummary);
     root->setProperty ("genreMode", (int) genreMode);
+
+    // ---- The actual music: every lane's notes + lock/mute flags ----
+    juce::Array<juce::var> lanes;
+    for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
+    {
+        const auto& part = parts[(size_t) t];
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("locked", part.locked);
+        o->setProperty ("muted",  part.muted);
+        o->setProperty ("notes",  notesToVar (part.notes));
+        lanes.add (juce::var (o));
+    }
+    root->setProperty ("lanes", lanes);
+
+    juce::Array<juce::var> kit;
+    for (int dp = 0; dp < (int) DrumPiece::NumPieces; ++dp)
+    {
+        const auto& piece = drumKit[(size_t) dp];
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("locked", piece.locked);
+        o->setProperty ("muted",  piece.muted);
+        o->setProperty ("notes",  notesToVar (piece.notes));
+        kit.add (juce::var (o));
+    }
+    root->setProperty ("drumKitParts", kit);
 
     juce::Array<juce::var> timbres;
     for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
@@ -1704,6 +1852,16 @@ void AIMidiGenProcessor::setStateInformation (const void* data, int size)
     p.octave = (int) v.getProperty ("octave", p.octave);
     p.energy = (float) v.getProperty ("energy", p.energy);
     p.complexity = (float) v.getProperty ("complexity", p.complexity);
+    p.swing            = (float) v.getProperty ("swing", p.swing);
+    p.humanize         = (float) v.getProperty ("humanize", p.humanize);
+    p.noteDensity      = (float) v.getProperty ("noteDensity", p.noteDensity);
+    p.rhythmComplexity = (float) v.getProperty ("rhythmComplexity", p.rhythmComplexity);
+    p.chordComplexity  = (float) v.getProperty ("chordComplexity", p.chordComplexity);
+    p.seed = (unsigned int) (juce::int64) v.getProperty ("seed", (juce::int64) p.seed);
+    hostTempoSync.store ((bool) v.getProperty ("hostTempoSync", hostTempoSync.load()));
+    hostMidiOut.store ((bool) v.getProperty ("hostMidiOut", hostMidiOut.load()));
+    previewAudition.store ((bool) v.getProperty ("previewAudition", previewAudition.load()));
+    criticSummary = v.getProperty ("criticSummary", criticSummary).toString();
 
     if (v.hasProperty ("genreMode"))
         genreMode = genreModeFromIndex ((int) v.getProperty ("genreMode", 0));
@@ -1753,8 +1911,34 @@ void AIMidiGenProcessor::setStateInformation (const void* data, int size)
             partSampleIds[(size_t) t] = arr->getUnchecked (t).toString();
     }
 
+    // ---- Restore the actual music (notes + lock/mute per lane/piece) ----
+    if (auto* arr = v.getProperty ("lanes", {}).getArray())
+    {
+        for (int t = 0; t < (int) InstrumentType::NumTypes && t < arr->size(); ++t)
+        {
+            auto& part = parts[(size_t) t];
+            const auto o = arr->getUnchecked (t);
+            part.locked = (bool) o.getProperty ("locked", false);
+            part.muted  = (bool) o.getProperty ("muted", false);
+            varToNotes (o.getProperty ("notes", {}), part.notes);
+        }
+    }
+    if (auto* arr = v.getProperty ("drumKitParts", {}).getArray())
+    {
+        for (int dp = 0; dp < (int) DrumPiece::NumPieces && dp < arr->size(); ++dp)
+        {
+            auto& piece = drumKit[(size_t) dp];
+            const auto o = arr->getUnchecked (dp);
+            piece.locked = (bool) o.getProperty ("locked", false);
+            piece.muted  = (bool) o.getProperty ("muted", false);
+            varToNotes (o.getProperty ("notes", {}), piece.notes);
+        }
+    }
+
     syncPreviewSounds();
     syncSamplesToSynth();
+    rebuildDrumMasterPart();
+    rebuildPreviewSequences();
 }
 
 } // namespace aimidi

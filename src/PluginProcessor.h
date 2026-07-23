@@ -18,7 +18,8 @@ namespace aimidi
 /** The plugin core. Owns the project state (params + generated parts),
     the generation engine, the AI client, a built-in preview synth (piano +
     basic kit) for in-app listening, and MIDI-out for drag/DAW use. */
-class AIMidiGenProcessor : public juce::AudioProcessor
+class AIMidiGenProcessor : public juce::AudioProcessor,
+                           private juce::AsyncUpdater
 {
 public:
     AIMidiGenProcessor();
@@ -56,7 +57,7 @@ public:
 
     void generatePart (InstrumentType t, bool recordUndo = true);
     /** One undo step for regenerating every unlocked pitched/drum part. */
-    void generateAllParts();
+    void generateAllParts (bool recordUndo = true);
 
     /** Offline / local SongPlan engine (never claims to be Claude). */
     void generateAllPartsOffline (const juce::String& reasonLabel = "Generated locally — no API key");
@@ -215,6 +216,12 @@ private:
         MusicParams params;
         std::array<GeneratedPart, (size_t) InstrumentType::NumTypes> parts;
         std::array<GeneratedPart, (size_t) DrumPiece::NumPieces> drumKit;
+        // Undo must also revert style-switch side effects (timbres, mix, mode):
+        GenreMode genreMode {};
+        std::array<PartTimbre, (size_t) InstrumentType::NumTypes> partTimbres {};
+        std::array<float, (size_t) InstrumentType::NumTypes> partGains {};
+        std::array<float, (size_t) DrumPiece::NumPieces> drumGains {};
+        juce::String criticSummary;
     };
 
     MusicParams projectParams;
@@ -279,6 +286,14 @@ private:
 
     /** Guards preview sequence rebuild vs audio-thread playback. */
     juce::CriticalSection processLock;
+
+    // ---- Real-time-safety bridge (audio thread never mutates project state) ----
+    /** Audio-thread-readable mirrors, refreshed by rebuildPreviewSequences()/setBpm(). */
+    std::atomic<double> liveBpm  { 124.0 };
+    std::atomic<int>    liveBars { 4 };
+    /** Audio thread requests message-thread work (seq rebuild, host-bpm adopt). */
+    std::atomic<bool>   seqRebuildRequested { false };
+    void handleAsyncUpdate() override;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AIMidiGenProcessor)
 };
