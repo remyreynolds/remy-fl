@@ -835,6 +835,22 @@ juce::String AIMidiGenProcessor::buildClaudeGeneratePrompt (InstrumentType focus
 
 void AIMidiGenProcessor::applyHouseBrainRoutingBeforeGenerate()
 {
+    // Genre gate: mirror AIClient.cpp's useHouseBrain check. The bundled Brain PDF
+    // (BrainCorpus/BrainValidator) is a house-only corpus -- every archetype
+    // BrainCorpus::selectArchetype() can return (minimal_deep_tech_pocket,
+    // melody_first_progressive_house, high_impact_loop_pressure, rave_house_lift,
+    // pop_edm_clarity) is a house/EDM sub-style, and it falls back to a house
+    // archetype when nothing matches. Only route local/offline generation through it
+    // when the project genre is actually House (or left at its default), so
+    // hip-hop/techno/pop/classical/etc. projects aren't silently nudged toward house
+    // params -- see the DEVLOG "genre/tempo-sync bugs" audit entry this guards
+    // against regressing.
+    if (genreMode != GenreMode::House)
+    {
+        lastBrainArchetype = {};
+        return;
+    }
+
     auto& brain = aiClient.brainCorpus();
     if (! brain.isLoaded())
         (void) brain.loadFromDefaultLocations();
@@ -882,11 +898,17 @@ void AIMidiGenProcessor::applyHouseBrainRoutingBeforeGenerate()
 
 bool AIMidiGenProcessor::localGenerationPassesBrainRules (InstrumentType only)
 {
+    // Same genre gate as applyHouseBrainRoutingBeforeGenerate(): only hold local
+    // generation to the house-tuned hard rules (mono bass, house drum-hit budget,
+    // etc.) when the project is actually House. Other genres still get validated
+    // (pitch/velocity/duration/timing sanity + originality), just against the
+    // library's neutral default thresholds instead of house-specific ones.
+    const bool useHouseBrain = (genreMode == GenreMode::House);
     auto& brain = aiClient.brainCorpus();
-    if (! brain.isLoaded())
+    if (useHouseBrain && ! brain.isLoaded())
         return true;
 
-    BrainValidator validator (brain.hardRules());
+    BrainValidator validator (useHouseBrain ? brain.hardRules() : BrainCorpus::HardRules {});
     juce::StringArray recent;
     {
         // Mirror AIClient harmony memory for originality checks
