@@ -20,6 +20,7 @@ enum class SampleRole
     Bass,
     Keys,
     Lead,
+    Pad,
     Other,
     NumRoles
 };
@@ -37,6 +38,7 @@ inline const char* toString (SampleRole r)
         case SampleRole::Bass:      return "Bass";
         case SampleRole::Keys:      return "Keys";
         case SampleRole::Lead:      return "Lead";
+        case SampleRole::Pad:       return "Pad";
         case SampleRole::Other:     return "Other";
         default:                    return "?";
     }
@@ -58,6 +60,23 @@ inline SampleRole roleForDrumPiece (DrumPiece dp)
         case DrumPiece::CongaHi:
         case DrumPiece::CongaLo:   return SampleRole::Perc;
         default:                   return SampleRole::Other;
+    }
+}
+
+/** Map a pitched instrument lane → preferred sample role, so a Serum/other-synth
+    one-shot pack renders sensible defaults per lane (user can still pick any
+    sample from the pack — this only orders/pre-selects the menu). */
+inline SampleRole roleForInstrumentType (InstrumentType t)
+{
+    switch (t)
+    {
+        case InstrumentType::Melody:         return SampleRole::Lead;
+        case InstrumentType::CounterMelody:  return SampleRole::Lead;
+        case InstrumentType::Arp:            return SampleRole::Lead;
+        case InstrumentType::Chords:         return SampleRole::Keys;
+        case InstrumentType::Bass:           return SampleRole::Bass;
+        case InstrumentType::Pad:            return SampleRole::Pad;
+        default:                             return SampleRole::Other;
     }
 }
 

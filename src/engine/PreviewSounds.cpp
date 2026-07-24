@@ -26,9 +26,11 @@ GenreTimbreMap defaultsFor (GenreMode genre)
             setPart (m, InstrumentType::Melody, PartTimbre::SuperSaw,
                      { PartTimbre::SuperSaw, PartTimbre::BrightLead, PartTimbre::Pluck, PartTimbre::HousePiano });
             setPart (m, InstrumentType::Bass, PartTimbre::FilterBass,
-                     { PartTimbre::FilterBass, PartTimbre::OrganBass, PartTimbre::HouseBass, PartTimbre::Sub808 });
+                     { PartTimbre::FilterBass, PartTimbre::OrganBass, PartTimbre::HouseBass,
+                       PartTimbre::GrowlBass, PartTimbre::Sub808 });
             setPart (m, InstrumentType::Pad, PartTimbre::SuperSaw,
-                     { PartTimbre::SuperSaw, PartTimbre::WarmPad, PartTimbre::Strings, PartTimbre::ChordSynth });
+                     { PartTimbre::SuperSaw, PartTimbre::AiryPad, PartTimbre::WarmPad,
+                       PartTimbre::Strings, PartTimbre::ChordSynth });
             setPart (m, InstrumentType::Arp, PartTimbre::Pluck,
                      { PartTimbre::Pluck, PartTimbre::SuperSaw, PartTimbre::BrightLead, PartTimbre::ChordSynth });
             setPart (m, InstrumentType::CounterMelody, PartTimbre::Pluck,
@@ -94,9 +96,10 @@ GenreTimbreMap defaultsFor (GenreMode genre)
             setPart (m, InstrumentType::Melody, PartTimbre::BrightLead,
                      { PartTimbre::BrightLead, PartTimbre::SuperSaw, PartTimbre::Pluck, PartTimbre::ChordSynth });
             setPart (m, InstrumentType::Bass, PartTimbre::FilterBass,
-                     { PartTimbre::FilterBass, PartTimbre::HouseBass, PartTimbre::Sub808, PartTimbre::ChordSynth });
+                     { PartTimbre::FilterBass, PartTimbre::GrowlBass, PartTimbre::HouseBass,
+                       PartTimbre::Sub808, PartTimbre::ChordSynth });
             setPart (m, InstrumentType::Pad, PartTimbre::WarmPad,
-                     { PartTimbre::WarmPad, PartTimbre::ChordSynth });
+                     { PartTimbre::WarmPad, PartTimbre::AiryPad, PartTimbre::ChordSynth });
             setPart (m, InstrumentType::Arp, PartTimbre::Pluck,
                      { PartTimbre::Pluck, PartTimbre::BrightLead, PartTimbre::ChordSynth });
             setPart (m, InstrumentType::CounterMelody, PartTimbre::BrightLead,

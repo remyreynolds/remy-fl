@@ -351,6 +351,27 @@ void PreviewSynth::PitchedVoice::startNote (int midiNote, float velocity,
             attack = atkCoef (0.000025); // near-instant organ key-on
             envDecay = (float) std::exp (-1.0 / (sampleRate * 2.5));
             break;
+        case PartTimbre::GrowlBass:
+            // Serum-style wobble bass: fast on, sustained while held, filter
+            // is LFO-wobbled in renderNextBlock (fltEnv reused as LFO phase).
+            attack = atkCoef (0.00004);
+            envDecay = (float) std::exp (-1.0 / (sampleRate * 2.2));
+            fltBaseHz = 220.0f;
+            fltAmtHz  = 1400.0f + 2600.0f * level;
+            fltDamp   = 0.42f; // heavier resonance = growlier
+            fltEnv    = 0.0f;  // repurposed as LFO phase (radians) for this timbre
+            break;
+        case PartTimbre::AiryPad:
+            // Wide unison pad: slow swell, long tail, airy top via detune spread.
+            attack = atkCoef (0.006);
+            {
+                const double decaySec = juce::jmap ((double) midiNote, 24.0, 96.0, 6.0, 3.0);
+                envDecay = (float) std::exp (-1.0 / (sampleRate * decaySec));
+            }
+            fltBaseHz = 1200.0f;
+            fltAmtHz  = 3200.0f;
+            fltDamp   = 0.95f; // gentle, no resonance edge — smooth top end
+            break;
         case PartTimbre::SoftPiano:
         default:
             attack = atkCoef (0.0002);
@@ -364,7 +385,8 @@ void PreviewSynth::PitchedVoice::stopNote (float, bool allowTailOff)
     if (allowTailOff)
     {
         releasing = true;
-        const double releaseSec = (timbre == PartTimbre::WarmPad || timbre == PartTimbre::Strings)
+        const double releaseSec = (timbre == PartTimbre::WarmPad || timbre == PartTimbre::Strings
+                                    || timbre == PartTimbre::AiryPad)
                                       ? 0.55 : 0.18;
         envDecay = (float) std::exp (-1.0 / (sampleRate * releaseSec));
     }
@@ -490,6 +512,42 @@ void PreviewSynth::PitchedVoice::renderNextBlock (juce::AudioBuffer<float>& outp
                 const float h3 = (float) std::sin (phase3) * 0.20f;
                 const float click = naiveSaw (phase2, dt * 2.0) * std::exp (-t * 60.0f) * 0.18f;
                 sample = (h1 + h2 + h3 + click) * env * level * 0.38f;
+                break;
+            }
+            case PartTimbre::GrowlBass:
+            {
+                // Sub + saw through a filter wobbled by a slow LFO — the
+                // classic Serum growl-bass movement (LFO phase kept in fltEnv).
+                const float sub = (float) std::sin (phase) * 0.6f;
+                const float saw = naiveSaw (phase2, dt * 1.003);
+                fltEnv += (float) (2.0 * juce::MathConstants<double>::pi * 5.2 / sampleRate);
+                if (fltEnv > juce::MathConstants<float>::twoPi)
+                    fltEnv -= juce::MathConstants<float>::twoPi;
+                const float wobble = 0.5f + 0.5f * std::sin (fltEnv);
+                const float filtered = svfProcess (sub + saw, fltBaseHz + fltAmtHz * wobble);
+                sample = filtered * env * level * 0.55f;
+                break;
+            }
+            case PartTimbre::AiryPad:
+            {
+                // Wide 7-voice unison through a gentle low-pass — same engine
+                // as SuperSaw but wider detune, slower envelope, softer filter.
+                static constexpr double detune[7] =
+                    { 1.0, 0.986, 1.014, 0.972, 1.028, 0.958, 1.042 };
+                static constexpr float uniGain[7] =
+                    { 0.26f, 0.20f, 0.20f, 0.15f, 0.15f, 0.10f, 0.10f };
+
+                float mix = 0.0f;
+                for (int u = 0; u < kUnison; ++u)
+                {
+                    const double fu = freq * detune[u];
+                    mix += naiveSaw (uniPhase[(size_t) u], fu / sampleRate) * uniGain[u];
+                    uniPhase[(size_t) u] += fu * w;
+                    if (uniPhase[(size_t) u] > juce::MathConstants<double>::twoPi)
+                        uniPhase[(size_t) u] -= juce::MathConstants<double>::twoPi;
+                }
+                const float filtered = svfProcess (mix, fltBaseHz);
+                sample = filtered * env * level * 0.30f;
                 break;
             }
             case PartTimbre::ChordSynth:

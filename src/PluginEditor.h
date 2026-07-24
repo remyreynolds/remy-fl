@@ -10,6 +10,7 @@
 #include "gui/DrumKitPanel.h"
 #include "gui/MidiRollView.h"
 #include "gui/ChordDashboardView.h"
+#include "HumCaptureCallback.h"
 #include <array>
 #include <memory>
 
@@ -136,6 +137,12 @@ private:
     juce::ComboBox modelCombo;
     juce::TextButton dnaButton { "MIDI DNA" };       // learn groove/key from a .mid
     std::unique_ptr<juce::FileChooser> dnaChooser;
+    juce::TextButton humButton { "Hum chords" };     // mic capture -> chord progression
+    juce::Label   humStatusLabel;
+    std::unique_ptr<juce::AudioDeviceManager> humDeviceManager;
+    std::unique_ptr<HumCaptureCallback> humCallback;
+    void toggleHumCapture();
+    void applyHummedChords();
     juce::TextEditor apiKeyField;
     juce::Label   apiKeyLabel { {}, "API key" };
     juce::TextButton testKeyButton { "Test key" };

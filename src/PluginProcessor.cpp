@@ -577,13 +577,45 @@ void AIMidiGenProcessor::applyMidiPattern (MidiPattern& pattern, juce::String& e
 
     pushUndoSnapshot();
 
-    // Adopt tempo/length only when the pattern carries sane values — never
-    // let a malformed AI reply silently trash the project tempo.
-    if (pattern.bpm > 0.0)
+    // Is this response a fresh full-project generation, or a scoped edit
+    // touching only some lanes (Vary / Continue / a single-lane chat ask)?
+    // Scoped edits must NEVER redefine the shared tempo/bar-length — every
+    // OTHER lane already has notes composed against the current bars/bpm,
+    // and silently adopting whatever the AI happened to echo back in its
+    // JSON metadata for a one-lane reply is exactly what let different
+    // parts drift onto different loop lengths (drums stay 4 bars, a
+    // "Vary Chords" reply claims 8) so the song fell apart on playback and
+    // in exported MIDI. Only trust pattern.bpm/pattern.bars when nothing
+    // outside this response would be left stranded on the old timeline.
+    int strandedParts = 0;
+    for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
+    {
+        bool touchedByThisPattern = false;
+        for (const auto& lane : lanes)
+            if (instrumentTypeFromName (lane.instrument) == (InstrumentType) t)
+            {
+                touchedByThisPattern = true;
+                break;
+            }
+        if (! touchedByThisPattern && ! parts[(size_t) t].notes.empty())
+            ++strandedParts;
+    }
+    const bool isScopedEdit = strandedParts > 0;
+
+    // Adopt tempo/length only when the pattern carries sane values AND this
+    // is a full-project generation — never let a malformed or partial AI
+    // reply silently trash the project tempo / desync the other lanes.
+    if (pattern.bpm > 0.0 && ! isScopedEdit)
         setBpm (pattern.bpm);
-    if (pattern.bars > 0)
+    if (pattern.bars > 0 && ! isScopedEdit)
         projectParams.bars = juce::jlimit (1, 32, pattern.bars);
     pattern.key = juce::String (formatKeyString (projectParams));
+
+    // Hard boundary every applied lane must respect: the project's current
+    // (possibly just-updated) bar length. Scoped edits are clipped to it so
+    // one lane can never silently outrun what every other lane assumes the
+    // loop length is.
+    const double loopBoundaryBeats = projectParams.bars * 4.0;
 
     juce::StringArray applied;
     juce::StringArray skipped;
@@ -598,6 +630,24 @@ void AIMidiGenProcessor::applyMidiPattern (MidiPattern& pattern, juce::String& e
         }
 
         dest = patternPartToGeneratedPart (lane, pattern.bpm, pattern.bars);
+
+        // Clip any note that would spill past the shared loop boundary
+        // rather than let it silently stretch this lane out of sync with
+        // every other part in the project.
+        {
+            std::vector<NoteEvent> clipped;
+            clipped.reserve (dest.notes.size());
+            for (auto n : dest.notes)
+            {
+                if (n.startBeats >= loopBoundaryBeats)
+                    continue;
+                n.lengthBeats = juce::jmin (n.lengthBeats, loopBoundaryBeats - n.startBeats);
+                if (n.lengthBeats > 0.001)
+                    clipped.push_back (n);
+            }
+            dest.notes = std::move (clipped);
+        }
+
         applied.add (toString (type));
 
         if (type == InstrumentType::Drums)
@@ -741,7 +791,8 @@ juce::String AIMidiGenProcessor::buildClaudeGeneratePrompt (InstrumentType focus
 {
     const auto key = juce::String (formatKeyString (projectParams));
     juce::String prompt;
-    prompt << "Compose a house MIDI loop using the Groovewright Brain rules.\n"
+    prompt << "Compose a " << projectParams.genre
+           << " MIDI loop using the Groovewright Brain rules.\n"
            << "Genre/style: " << projectParams.genre << "\n"
            << "Key: " << key << "\n"
            << "BPM: " << (int) projectParams.bpm << "\n"

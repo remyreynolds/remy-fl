@@ -450,6 +450,19 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
     };
     generateSurface.addAndMakeVisible (dnaButton);
 
+    humButton.setComponentID ("ghost");
+    humButton.setTooltip ("Hum a melody into your mic — each held note becomes an "
+                          "in-key chord on the Chords lane. Click again to stop and apply.");
+    humButton.setClickingTogglesState (true);
+    humButton.onClick = [this] { toggleHumCapture(); };
+    generateSurface.addAndMakeVisible (humButton);
+
+    humStatusLabel.setFont (CustomLookAndFeel::font (10.5f));
+    humStatusLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt3);
+    humStatusLabel.setJustificationType (juce::Justification::centred);
+    humStatusLabel.setVisible (false);
+    generateSurface.addAndMakeVisible (humStatusLabel);
+
     soundLabel.setText ("Genre", juce::dontSendNotification);
     soundLabel.setFont (CustomLookAndFeel::font (11.5f, juce::Font::bold));
     soundLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
@@ -1035,6 +1048,11 @@ void AIMidiGenEditor::setSurface (Surface s)
 AIMidiGenEditor::~AIMidiGenEditor()
 {
     stopTimer();
+    if (humDeviceManager != nullptr)
+    {
+        humDeviceManager->removeAudioCallback (humCallback.get());
+        humDeviceManager->closeAudioDevice();
+    }
     clearGeneratingUi();
     // Solo is an editor-only overlay — drop it and restore base mutes so a
     // reopened editor seeds cleanly from the processor's .muted flags.
@@ -1061,6 +1079,69 @@ void AIMidiGenEditor::refreshBpmLabel()
     bpmLabel.setText (hostSync ? "BPM · HOST" : "BPM", juce::dontSendNotification);
     hostSyncButton.setToggleState (hostSync, juce::dontSendNotification);
     hostMidiButton.setToggleState (processor.isHostMidiOut(), juce::dontSendNotification);
+}
+
+void AIMidiGenEditor::toggleHumCapture()
+{
+    const bool startCapture = humButton.getToggleState();
+
+    if (startCapture)
+    {
+        humCallback = std::make_unique<HumCaptureCallback> (processor.getBpm());
+        humDeviceManager = std::make_unique<juce::AudioDeviceManager>();
+        const juce::String err = humDeviceManager->initialise (1, 0, nullptr, true);
+        if (err.isNotEmpty())
+        {
+            chatPanel.addAssistantMessage ("Couldn't open a mic input for humming: " + err);
+            humButton.setToggleState (false, juce::dontSendNotification);
+            humDeviceManager.reset();
+            humCallback.reset();
+            return;
+        }
+        humDeviceManager->addAudioCallback (humCallback.get());
+        humButton.setButtonText ("Listening...");
+        humStatusLabel.setText ("Listening... hum a note", juce::dontSendNotification);
+        humStatusLabel.setVisible (true);
+    }
+    else
+    {
+        humButton.setButtonText ("Hum chords");
+        humStatusLabel.setVisible (false);
+        applyHummedChords();
+
+        if (humDeviceManager != nullptr)
+        {
+            humDeviceManager->removeAudioCallback (humCallback.get());
+            humDeviceManager->closeAudioDevice();
+        }
+        humDeviceManager.reset();
+        humCallback.reset();
+    }
+}
+
+void AIMidiGenEditor::applyHummedChords()
+{
+    if (humCallback == nullptr)
+        return;
+
+    const auto hums = humCallback->snapshotNotes();
+    if (hums.empty())
+    {
+        chatPanel.addAssistantMessage ("Didn't catch a clear hummed note — try again a bit louder/closer to the mic.");
+        return;
+    }
+
+    const auto part = humToChords (processor.params(), hums);
+    if (part.notes.empty())
+        return;
+
+    processor.part (InstrumentType::Chords) = part;
+    refreshLanes();
+    refreshMidiRoll();
+    refreshChordDashboard();
+    refreshPanels();
+    chatPanel.addAssistantMessage ("Turned your hummed melody into a " + juce::String ((int) hums.size())
+                                  + "-chord progression on the Chords lane.");
 }
 
 void AIMidiGenEditor::timerCallback()
@@ -1104,6 +1185,16 @@ void AIMidiGenEditor::timerCallback()
     // Connected badge breathe glow (2.6s) — only the status chip, not full UI
     if (! statusBadgeBounds.isEmpty() && processor.ai().hasApiKey())
         repaint (statusBadgeBounds.expanded (6));
+
+    if (humCallback != nullptr && humButton.getToggleState())
+    {
+        const int note = humCallback->currentLiveNote();
+        if (note >= 0)
+            humStatusLabel.setText ("Hearing: " + juce::MidiMessage::getMidiNoteName (note, true, true, 3),
+                                     juce::dontSendNotification);
+        else
+            humStatusLabel.setText ("Listening... hum a note", juce::dontSendNotification);
+    }
 }
 
 void AIMidiGenEditor::handlePrompt (const juce::String& prompt)
@@ -2103,6 +2194,13 @@ void AIMidiGenEditor::layoutGenerateSurface()
         rail.removeFromTop (6);
         if (dnaButton.isVisible())
             dnaButton.setBounds (rail.removeFromTop (36));
+        rail.removeFromTop (6);
+        humButton.setBounds (rail.removeFromTop (36));
+        if (humStatusLabel.isVisible())
+        {
+            rail.removeFromTop (2);
+            humStatusLabel.setBounds (rail.removeFromTop (14));
+        }
 
         // LAST RUN pinned to bottom
         auto meta = rail.removeFromBottom (72);

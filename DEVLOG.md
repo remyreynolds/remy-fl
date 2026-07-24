@@ -1,5 +1,54 @@
 # AI MIDI Gen — Development Log
 
+## 2026-07-23 — Brain-grounding audit, two new Serum-style sounds, hum-to-chords
+
+**Audit: "MIDIs suck" — is generation actually routing through the Brain?**
+Traced every generation entry point (`generatePreferredAll`, `generatePreferredLane`,
+`newIdeaPreferred` in PluginProcessor.cpp, and `AIClient::requestMidiPattern`).
+Confirmed: whenever offline mode is off and an API key is present, every
+request goes through Claude with `KnowledgeBase::retrieveForQuery()` +
+`masterPromptText()` injected into the system prompt — grounding is wired
+correctly, no routing bug found. The likely real cause of "MIDIs suck" is
+generating **without** a Claude key configured (or with Offline mode on),
+which silently falls back to the local rule-based `SongPlan`/`MidiGenerator`
+engine — competent and always in-key, but inherently simpler than Claude's
+output. The honest status badge from the previous entry now makes this
+visible at a glance ("Local engine" vs "Claude ready").
+
+**More sounds (Serum-style palette expansion).** Added two new `PartTimbre`
+values built on the existing 7-voice-unison + resonant SVF engine (the same
+machinery behind `SuperSaw`):
+- `GrowlBass` — sub sine + detuned saw through an LFO-wobbled resonant
+  filter (~5.2 Hz wobble), classic Serum "growl bass" character.
+- `AiryPad` — wider-detune unison pad, slow attack, smooth non-resonant
+  top-end filter, longer register-dependent release.
+Both wired into `PreviewSynth::startNote/renderNextBlock/stopNote` and added
+as selectable variants (not defaults) for House/Techno Bass and Pad parts in
+`PreviewSounds.cpp`.
+
+**Hum-to-chords.** New capability: hum a melody into the mic and get an
+in-key chord progression on the Chords lane.
+- `engine/PitchDetector.h` — small JUCE-free RMS-gated autocorrelation
+  pitch tracker (70–1000 Hz), unit tested against silence and a synthesized
+  220 Hz tone.
+- `engine/HumToChords.h` — pure function: each held hummed note snaps to
+  the project scale, becomes a diatonic chord (3/7/9-tone by
+  `chordComplexity`) voice-led from the previous chord via the existing
+  `theory::voiceLead`. Unit tested for in-key output and empty-input safety.
+- `HumCaptureCallback.h` + a "Hum chords" toggle button in the Generate
+  rail: opens a **standalone** `juce::AudioDeviceManager` mic input
+  (independent of the host's audio graph — no changes to the plugin's own
+  `BusesProperties`/`processBlock`, so no host-compatibility risk), tracks
+  live note segments, and on stop converts the captured melody into a
+  `GeneratedPart` applied straight to `processor.part (InstrumentType::Chords)`.
+
+### Validation
+- `EngineTests` gained "Hum-to-chords produces in-key chord progressions"
+  and "PitchDetector detects tones and rejects silence"; full native suite
+  (`MidiPatternTests`, `EngineTests`, `GeneratorAuditTests`) green.
+- Full CMake+Ninja build (VST3/Standalone) green after the sounds and
+  editor/processor changes.
+
 ## 2026-07-23 — Ease-of-use pass: key testing, help overlay, genre-smart tempo
 
 Three strategic usability items, aimed at a beginner producer's first session:

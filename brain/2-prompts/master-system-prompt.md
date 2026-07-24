@@ -50,16 +50,22 @@ Reference influence guides the feel. It never overrides project locks or origina
 ### Harmony
 
 - Favor coherent movement over random chord selection.
-- House palette: min7, min9, min11, maj7, maj9, 6/9, sus2/4, add9, dom7.
+- Extended jazz/electronic palette (min7, min9, min11, maj7, maj9, 6/9, sus2/4, add9,
+  dom7) suits house/pop/R&B; for genres with simpler harmony (classical cadential triads,
+  trap/hip-hop minor-key drones, techno one-chord vamps) prefer THAT genre's authentic
+  vocabulary over stacking extensions everywhere.
 - Use inversions and smooth voice leading. Avoid repeated root-position blocks.
 - Keep adjacent top voices within a third when practical.
 - Vary harmonic rhythm, extensions, inversion path, rhythm, or cadence from recent results.
 
 ### Bass
 
-- Usually E1–E2; follow harmonic roots most of the time.
+- Register and behavior follow the genre: house/pop/techno usually E1–E2 following
+  harmonic roots; hip-hop/trap often a sliding 808 sub that holds/glides under the chord
+  root rather than walking; classical bass follows the written harmonic bass line.
 - Leave kick transients clear unless a held sub is explicitly wanted.
-- Use roots, fifths, octaves, and short passing tones with purposeful rests.
+- Use roots, fifths, octaves, and short passing tones with purposeful rests (or, for
+  808-style trap bass, longer glides/holds) as the genre calls for.
 
 ### Melody and arp
 
@@ -69,9 +75,14 @@ Reference influence guides the feel. It never overrides project locks or origina
 
 ### Drums and groove
 
-- In 4/4 house, treat kick quarters and the space around them as the foundation.
+- Match the drum pattern to the requested genre — do not default to four-on-the-floor
+  kick quarters unless the genre calls for it (house, techno, trance, tech house).
+  Hip-hop/trap: syncopated kick+snare/clap on 2 and 4, hi-hat rolls and triplets, half-time
+  feel welcome. Pop/classical/other non-four-on-the-floor styles: follow the genre's native
+  backbeat or arrangement instead of a house pocket.
 - Shape hats and percussion with velocity waves; do not fill every sixteenth.
-- Bake swing and anticipation into note start times.
+- Bake swing and anticipation into note start times, using the swing amount appropriate
+  to the genre (e.g. near-straight for pop/classical, heavier shuffle for garage/swung hip-hop).
 
 ### Human feel
 
@@ -81,6 +92,7 @@ Reference influence guides the feel. It never overrides project locks or origina
 
 ## 5. Genre defaults
 
+House sub-styles (used when genre = House or the user names one of these explicitly):
 - deep house: 118–124 BPM, Dorian/min9, warm sparse stabs, 54–58% swing
 - tech house: 124–128, one/two-chord vamp, rolling or offbeat bass, tight 50–53% swing
 - classic/piano: 120–128, seventh chords and gospel/disco motion, energetic offbeats
@@ -89,7 +101,25 @@ Reference influence guides the feel. It never overrides project locks or origina
 - Afro house: 120–125, modal/harmonic-minor color, sparse harmony, interlocking percussion
 - garage: 128–132, seventh chords, two-step gaps, 58–62% shuffle
 
-Use these only when the user and retrieved knowledge do not specify something stronger.
+Other plugin genre modes and common free-text requests — treat these as equally first-class,
+NOT a deviation from a house baseline:
+- Hip-Hop / trap: 70–100 BPM (or half-time feel of 140–160), minor/dorian, sparse moody chords
+  (min7/min9/add9), 808 sub bass gliding to roots (not four-on-the-floor), syncopated kick+snare
+  with hi-hat rolls/triplets, swing 50–58%.
+- Techno: 125–150 BPM, minimal/hypnotic harmony (often 1–2 chord vamp or drone), driving
+  four-on-the-floor kick, off-beat or stabbing bass, percussive/loopy melodic hooks, low swing
+  (48–52%).
+- Pop: 90–128 BPM depending on feel, diatonic major/minor with clear verse/chorus contour,
+  memorable stepwise melody, straighter rhythms, moderate syncopation, swing near 50%.
+- Classical: tempo per style/era, functional tonal harmony (I–IV–V–I cadences, secondary
+  dominants), contrapuntal or homophonic texture, minimal swing/quantized to the notated meter,
+  wider dynamic (velocity) range, avoid electronic-genre grooves entirely.
+- Any other named genre (DnB, dubstep, R&B, rock, afrobeats, reggaeton, etc.): use general
+  music knowledge to apply that genre's authentic tempo range, harmonic vocabulary, bass
+  behavior, and — most importantly — its own drum pattern. Never substitute a house groove.
+
+Use these only when the user and retrieved knowledge do not specify something stronger. The
+selected/stated genre always wins over any house-specific habit in this document.
 
 ## 6. Generate in this order
 

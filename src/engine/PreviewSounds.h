@@ -33,6 +33,8 @@ enum class PartTimbre
     SuperSaw,    // Serum-style detuned 7-voice unison saw through a resonant LP
     FilterBass,  // classic house bass: saw+sub through envelope-swept filter
     OrganBass,   // M1-style house organ bass
+    GrowlBass,   // Serum-style wobble/growl bass: LFO-driven resonant filter
+    AiryPad,     // Serum-style unison pad: slow attack, wide detune, airy top
     NumTimbres
 };
 
@@ -77,6 +79,8 @@ inline const char* toString (PartTimbre t)
         case PartTimbre::SuperSaw:     return "Super Saw";
         case PartTimbre::FilterBass:   return "Filter Bass";
         case PartTimbre::OrganBass:    return "Organ Bass";
+        case PartTimbre::GrowlBass:    return "Growl Bass";
+        case PartTimbre::AiryPad:      return "Airy Pad";
         default:                       return "?";
     }
 }

@@ -1,11 +1,14 @@
 #include "MusicInstructions.h"
 #include "MusicTheory.h"
+#include "HumToChords.h"
+#include "PitchDetector.h"
 #include "StylePresets.h"
 #include "SongPlan.h"
 #include "GenerationReport.h"
 #include "Critic.h"
 #include "ChatDirector.h"
 #include <cassert>
+#include <cmath>
 #include <cstdio>
 #include <set>
 #include <string>
@@ -427,6 +430,57 @@ int main()
                 assert (inScale);
             }
         std::printf ("OK  Offline SongPlan works without API key (in-key chords)\n");
+    }
+
+    // ---- Hum-to-chords: hummed notes become an in-key chord progression ----
+    {
+        MusicParams p;
+        p.root = "F";
+        p.scale = "minor";
+        p.chordComplexity = 0.8f; // -> 9th chords
+
+        std::vector<HumNote> hums;
+        hums.push_back ({ 0.0, 2.0, 65 });  // F4-ish
+        hums.push_back ({ 2.0, 2.0, 68 });  // Ab-ish
+        hums.push_back ({ 4.0, 2.0, 72 });  // C5-ish
+
+        auto part = humToChords (p, hums);
+        assert (part.type == InstrumentType::Chords);
+        assert (! part.notes.empty());
+
+        // Every generated note is in-key.
+        const int rootPc = theory::rootPitchClass (p.root);
+        const auto ivals = theory::scaleIntervals (p.scale);
+        for (const auto& n : part.notes)
+        {
+            const int pc = ((n.pitch % 12) - rootPc + 12) % 12;
+            bool inScale = false;
+            for (int iv : ivals) if (iv == pc) inScale = true;
+            assert (inScale);
+        }
+
+        // Empty hum log -> empty part, no crash.
+        auto emptyPart = humToChords (p, {});
+        assert (emptyPart.notes.empty());
+
+        std::printf ("OK  Hum-to-chords produces in-key chord progressions\n");
+    }
+
+    // ---- PitchDetector: silence and pure tones behave sanely ----
+    {
+        PitchDetector detector (44100.0);
+        std::vector<float> silence (1024, 0.0f);
+        assert (detector.detectFrequency (silence.data(), (int) silence.size()) == 0.0f);
+
+        // Synthesize a clean 220 Hz tone and confirm it's detected within 3%.
+        std::vector<float> tone (2048);
+        for (size_t i = 0; i < tone.size(); ++i)
+            tone[i] = (float) std::sin (2.0 * 3.14159265358979323846 * 220.0 * (double) i / 44100.0);
+        const float freq = detector.detectFrequency (tone.data(), (int) tone.size());
+        assert (freq > 213.0f && freq < 227.0f);
+        assert (PitchDetector::frequencyToMidiNote (220.0f) == 57); // A3
+
+        std::printf ("OK  PitchDetector detects tones and rejects silence\n");
     }
 
     std::printf ("\nAll engine tests passed.\n");
