@@ -165,7 +165,9 @@ def test_companion_is_served_and_queue_feeds_next_fl_apply(
             },
         )
     assert index.status_code == 200
-    assert "MIDI Agent" in index.text
+    # Companion frontend was rebranded to ComposerAI; check the served
+    # index.html reflects that instead of the old product name.
+    assert "ComposerAI" in index.text
     assert queued.json()["queued"] == 1
     assert consumed.status_code == 200
     assert consumed.json() == contract.model_dump()

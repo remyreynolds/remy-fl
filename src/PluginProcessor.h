@@ -65,14 +65,13 @@ public:
                               const juce::String& reasonLabel = "Generated locally — no API key");
     /** Record an offline result after MIDI was already written (e.g. focus filter). */
     void noteOfflineResult (const juce::String& reasonLabel);
-    /** Preferred Generate path: Claude+Brain when a key is present and offline
-        mode is off; otherwise local. On Claude failure does NOT silently fall
-        back — sets lastGeneration to FailedClaude and leaves MIDI unchanged. */
+    /** Button Generate / New Idea: always local SongPlan engine.
+        Claude is only used when chat explicitly asks to compose/vary MIDI. */
     void generatePreferredAll (std::function<void (GenerationReport)> onDone);
     void generatePreferredLane (InstrumentType t,
                                 std::function<void (GenerationReport)> onDone);
 
-    /** New Idea: fresh seed + meaningfully different harmonic fingerprint. */
+    /** New Idea: fresh seed + meaningfully different harmonic fingerprint (local). */
     void newIdeaPreferred (std::function<void (GenerationReport)> onDone);
 
     /** Vary chords via Claude while locking key / genre / BPM / bars. */
@@ -83,7 +82,7 @@ public:
     void useLocalGeneratorNow (std::function<void (GenerationReport)> onDone = nullptr);
     bool hasPendingLocalOffer() const { return pendingLocalOffer; }
 
-    /** When true, Generate / New Idea always use the local engine even if a key exists. */
+    /** When true, Chat also skips Claude (Generate is always local anyway). */
     void setPreferOfflineGeneration (bool offline) { preferOfflineGeneration = offline; }
     bool prefersOfflineGeneration() const { return preferOfflineGeneration; }
 
@@ -271,6 +270,13 @@ private:
     void recordClaudeFailure (const juce::String& error,
                               PendingLocalAction action,
                               InstrumentType lane = InstrumentType::Chords);
+
+    /** Appendix C + PDF param nudges before local SongPlan generation. */
+    void applyHouseBrainRoutingBeforeGenerate();
+    /** Ch.9/11 post-gen checks on local parts; empty type = all lanes. */
+    bool localGenerationPassesBrainRules (InstrumentType only = InstrumentType::NumTypes);
+
+    juce::String lastBrainArchetype;
     juce::String buildClaudeGeneratePrompt (InstrumentType focusOrAll) const;
     juce::String currentSongPlanFingerprint() const;
     bool rollSeedUntilFingerprintChanges (const juce::String& previousFp, int maxTries = 12);

@@ -1,4 +1,5 @@
 #include "AIClient.h"
+#include "../engine/PreviewSounds.h" // GenreMode + detectGenreFromText: gate house-Brain-PDF routing
 #include <juce_data_structures/juce_data_structures.h>
 #include <juce_events/juce_events.h>
 #include <algorithm>
@@ -64,6 +65,9 @@ AIClient::AIClient()
         || claudeModel == "claude-sonnet-4-6")
         claudeModel = "claude-sonnet-4-5";
     openAiModel = props.getValue ("openAiModel", "gpt-4o");
+
+    // PDF knowledge store (Appendix E heading chunks) — load before any generation.
+    (void) houseBrain.loadFromDefaultLocations();
 }
 
 AIClient::~AIClient()
@@ -746,20 +750,55 @@ void AIClient::requestMidiPattern (const juce::String& userPrompt,
 
     const auto prompt = userPrompt.trim();
     const auto lockKey = forcedKey.trim();
-    // MIDI path: bias groove docs; skip the master Brain doc — it is injected
-    // into the system prompt below, so it must not appear twice per request.
-    auto retrieval = knowledgeBase.retrieveForQuery (prompt, 14000, true, false);
+
+    // Genre gate: the bundled Brain PDF (BrainCorpus/BrainValidator) is a house-only
+    // corpus — every archetype BrainCorpus::selectArchetype() can return
+    // (minimal_deep_tech_pocket, melody_first_progressive_house, high_impact_loop_pressure,
+    // rave_house_lift, pop_edm_clarity) is a house/EDM sub-style, and it falls back to a
+    // house archetype when nothing matches. Route generation through it only when the
+    // request is actually house (or genre-ambiguous, preserving the historical default);
+    // for an explicit non-house genre (hip-hop/trap, techno, pop, classical...) skip PDF
+    // routing entirely so we don't force house conventions onto it — see the DEVLOG
+    // "genre/tempo-sync bugs" audit entry this guards against regressing.
+    GenreMode detectedGenre = GenreMode::House;
+    const bool genreExplicit = detectGenreFromText (prompt + " " + projectContext, detectedGenre);
+    const bool useHouseBrain = ! genreExplicit || detectedGenre == GenreMode::House;
+
+    // PDF-first retrieval (Part I shared + one Part II archetype + Part III rules) —
+    // only meaningful when we're actually generating house material.
+    if (useHouseBrain && ! houseBrain.isLoaded())
+        (void) houseBrain.loadFromDefaultLocations();
+    const auto brainRoute = useHouseBrain ? houseBrain.retrieveForGeneration (prompt, 16000)
+                                          : BrainCorpus::RouteResult {};
+    const auto brainCtx = brainRoute.context;
+    const auto brainArch = brainRoute.primaryArchetype;
+    const auto brainTitles = brainRoute.matchedTitles;
+    const int brainChunks = brainRoute.chunksUsed;
+    const auto brainRules = useHouseBrain ? houseBrain.hardRules() : BrainCorpus::HardRules {};
+
+    // MIDI path: bias groove docs; skip the master Brain doc via includeMasterDoc=false —
+    // it is injected into the system prompt below (masterBrain), so it must not appear
+    // twice per request. Budget shrinks when the PDF is also competing for prompt space.
+    auto retrieval = knowledgeBase.retrieveForQuery (prompt, useHouseBrain ? 8000 : 14000, true, false);
     const auto knowledgeCtx = retrieval.context;
     const auto matchedDocs = retrieval.matchedDocs;
     const int docsUsed = matchedDocs.size();
     const auto projCtx = projectContext; // copy for thread safety
     const auto recentProgressions = recentProgressionsForPrompt();
+    juce::StringArray recentFpList;
+    {
+        const juce::ScopedLock sl (progressionHistoryLock);
+        for (auto& fp : recentChordProgressions)
+            recentFpList.add (fp);
+    }
     const auto variationNonce = juce::Uuid().toString();
     const auto ep = endpointSnapshot();               // by value for the worker
     const auto masterBrain = knowledgeBase.masterPromptText(); // read on message thread
 
-    juce::Thread::launch ([this, alive = alive, prompt, lockKey, knowledgeCtx, projCtx, matchedDocs,
-                           docsUsed, recentProgressions, variationNonce, ep, masterBrain, callback]
+    juce::Thread::launch ([this, alive = alive, prompt, lockKey, useHouseBrain, brainCtx, brainArch,
+                           brainTitles, brainChunks, brainRules, knowledgeCtx, projCtx, matchedDocs,
+                           docsUsed, recentProgressions, recentFpList, variationNonce, ep, masterBrain,
+                           callback]
     {
         if (! alive->load())
             return; // AIClient destroyed before the worker started
@@ -767,8 +806,34 @@ void AIClient::requestMidiPattern (const juce::String& userPrompt,
         PatternResponse resp;
         resp.knowledgeDocsUsed = docsUsed;
         resp.matchedDocTitles = matchedDocs;
+        resp.primaryArchetype = brainArch;
+        resp.brainChunksUsed = brainChunks;
+        for (auto& t : brainTitles)
+            if (! resp.matchedDocTitles.contains (t))
+                resp.matchedDocTitles.add (t);
 
         juce::String system;
+
+        // 1) PDF corpus sits ABOVE all other knowledge (user requirement) — house only.
+        if (useHouseBrain)
+        {
+            if (brainCtx.isNotEmpty())
+            {
+                system << "===== HOUSE MUSIC MIDI GENERATOR BRAIN (PDF — TOP PRIORITY) =====\n"
+                       << brainCtx
+                       << "\n===== END HOUSE BRAIN PDF =====\n\n"
+                       << "INSTRUCTION: Generate using the parameter cards, progression libraries "
+                          "(Appendix A), drum pattern libraries (Appendix B), velocity bands, swing "
+                          "ranges, and generation recipes from the provided document. Where the "
+                          "document specifies a value or range, it overrides your general knowledge.\n\n";
+            }
+            else
+            {
+                system << "HOUSE BRAIN PDF corpus was unavailable. Still prefer house-brain docs "
+                          "over generic music knowledge when present below.\n\n";
+            }
+        }
+
         if (masterBrain.trim().isNotEmpty())
         {
             system << "===== MASTER SYSTEM PROMPT (bundled Brain) =====\n"
@@ -776,23 +841,49 @@ void AIClient::requestMidiPattern (const juce::String& userPrompt,
                    << "\n===== END MASTER SYSTEM PROMPT =====\n\n";
         }
         system << buildClaudeMidiSystemPrompt();
-        system << "\n\nWorkflow before writing notes:\n"
-                  "1) Identify the musical style/genre the user wants.\n"
-                  "2) Use the shared brain MUSIC THEORY REFERENCES (same docs as "
-                  "the Python generator) — prefer matching titles/content.\n"
-                  "3) You may also apply Claude music knowledge when the local "
-                  "docs are incomplete, without contradicting those docs.\n"
-                  "4) Decide single-part vs full-loop: if the user wants a loop/"
-                  "groove/track/arrangement or multiple roles, return parts[] "
-                  "with chords+bass+melody+drums (add arp/pad if asked). "
-                  "If they ask for one role only, use the single-part schema.\n"
-                  "5) Apply key, BPM, bars, and instrument request.\n"
-                  "6) Treat the user's text as the composition brief: translate its mood, "
-                  "imagery, energy, era, and adjectives into deliberate harmony, voicing, "
-                  "rhythm, register, tension, and note density. Do not fall back to a house "
-                  "template when the text gives creative direction.\n"
-                  "7) Include explicit \"progression\" + \"chords\" metadata for any chord work.\n"
-                  "8) Return ONLY the MIDI JSON schema — no prose.";
+
+        if (useHouseBrain)
+        {
+            system << "\n\nWorkflow before writing notes:\n"
+                      "1) Identify the musical style/genre the user wants and map it to ONE primary "
+                      "archetype from the PDF (Appendix C). Hybrids: one primary, max two borrowed "
+                      "dimensions — never average identities.\n"
+                      "2) Use the HOUSE BRAIN PDF sections retrieved above first (Part I theory for "
+                      "requested layers, Part II primary archetype, Part III pipeline/constraints).\n"
+                      "3) Secondary: shared brain MUSIC THEORY REFERENCES below — only to fill gaps "
+                      "that do not contradict the PDF.\n"
+                      "4) Where the PDF specifies a value or range, it OVERRIDES general knowledge.\n"
+                      "5) Decide single-part vs full-loop: if the user wants a loop/"
+                      "groove/track/arrangement or multiple roles, return parts[] "
+                      "with chords+bass+melody+drums (add arp/pad if asked). "
+                      "If they ask for one role only, use the single-part schema.\n"
+                      "6) Obey generation order/dependency (PDF ch.6): harmony before bass before "
+                      "optional drums before melody before arrangement mutations.\n"
+                      "7) Treat the user's text as the composition brief.\n"
+                      "8) Include \"progression\" + \"chords\" metadata for chord work; include "
+                      "archetype id and similarity notes when relevant.\n"
+                      "9) Return ONLY the MIDI JSON schema — no prose.";
+        }
+        else
+        {
+            system << "\n\nWorkflow before writing notes:\n"
+                      "1) Identify the musical style/genre the user wants.\n"
+                      "2) Use the shared brain MUSIC THEORY REFERENCES (same docs as "
+                      "the Python generator) — prefer matching titles/content.\n"
+                      "3) You may also apply Claude music knowledge when the local "
+                      "docs are incomplete, without contradicting those docs.\n"
+                      "4) Decide single-part vs full-loop: if the user wants a loop/"
+                      "groove/track/arrangement or multiple roles, return parts[] "
+                      "with chords+bass+melody+drums (add arp/pad if asked). "
+                      "If they ask for one role only, use the single-part schema.\n"
+                      "5) Apply key, BPM, bars, and instrument request.\n"
+                      "6) Treat the user's text as the composition brief: translate its mood, "
+                      "imagery, energy, era, and adjectives into deliberate harmony, voicing, "
+                      "rhythm, register, tension, and note density. Do not fall back to a house "
+                      "template when the text gives creative direction.\n"
+                      "7) Include explicit \"progression\" + \"chords\" metadata for any chord work.\n"
+                      "8) Return ONLY the MIDI JSON schema — no prose.";
+        }
 
         if (lockKey.isNotEmpty())
         {
@@ -807,6 +898,8 @@ void AIClient::requestMidiPattern (const juce::String& userPrompt,
         user << "\n\n[Variation nonce: " << variationNonce
              << ". This is a new composition request. Make materially new musical choices; "
                 "do not reuse your default progression.]";
+        if (brainArch.isNotEmpty())
+            user << "\n[Primary archetype lock: " << brainArch << "]";
         if (recentProgressions.isNotEmpty())
             user << "\n\n===== RECENT CHORD PROGRESSIONS TO AVOID =====\n"
                  << recentProgressions
@@ -824,44 +917,56 @@ void AIClient::requestMidiPattern (const juce::String& userPrompt,
                  << "Compose to complement what is already loaded above.";
         }
 
+        // Secondary knowledge (non-PDF guides) — below PDF in priority when the PDF
+        // is in play; otherwise this is simply the primary shared-brain reference set.
         if (knowledgeCtx.isNotEmpty())
         {
-            user << "\n\n===== MUSIC THEORY REFERENCES (shared brain knowledge) =====\n"
-                 << knowledgeCtx
-                 << "\n===== END REFERENCES =====\n"
-                 << "These are the same brain guides the generator uses. Prefer them, "
-                    "then fill gaps with Claude knowledge. Compose MIDI that follows "
-                    "those rules and the project key/BPM/bars.";
+            if (useHouseBrain)
+            {
+                user << "\n\n===== MUSIC THEORY REFERENCES (secondary — fill gaps only) =====\n"
+                     << knowledgeCtx
+                     << "\n===== END REFERENCES =====\n"
+                     << "Do not contradict the HOUSE BRAIN PDF. Prefer PDF parameter cards and recipes.";
+            }
+            else
+            {
+                user << "\n\n===== MUSIC THEORY REFERENCES (shared brain knowledge) =====\n"
+                     << knowledgeCtx
+                     << "\n===== END REFERENCES =====\n"
+                     << "These are the same brain guides the generator uses. Prefer them, "
+                        "then fill gaps with Claude knowledge. Compose MIDI that follows "
+                        "those rules and the project key/BPM/bars.";
+            }
         }
 
-        // Pattern path runs hot (0.9) so repeated requests explore new ideas.
-        auto http = postChatCompletion (ep, system, user, 8192, 0.9);
-        if (! http.ok)
-        {
-            resp.ok = false;
-            resp.error = http.error;
-            juce::MessageManager::callAsync ([callback, resp] { callback (resp); });
-            return;
-        }
+        // Multi-attempt generation with Brain-hard-rule validation (originality,
+        // density budgets, bass monophony, pipeline order). `rules` is the real PDF
+        // rule set when useHouseBrain, otherwise sane genre-neutral defaults — the
+        // validator itself is not house-specific, only the rule values can be.
+        BrainValidator validator (brainRules);
+        constexpr int kMaxAttempts = 3;
+        MidiPatternParseResult parsed;
+        parsed.ok = false;
+        juce::String lastError;
+        double bestScore = -1.0e9;
+        MidiPattern bestPattern;
+        bool haveBest = false;
 
-        auto parsed = parseClaudeMidiJson (http.text);
-        if (! parsed.ok)
+        for (int attempt = 0; attempt < kMaxAttempts; ++attempt)
         {
-            resp.ok = false;
-            resp.error = parsed.error;
-            juce::MessageManager::callAsync ([callback, resp] { callback (resp); });
-            return;
-        }
+            juce::String attemptUser = user;
+            if (attempt > 0)
+            {
+                attemptUser << "\n\nREJECTED CANDIDATE (attempt " << juce::String (attempt + 1)
+                            << "/" << juce::String (kMaxAttempts) << "): "
+                            << lastError
+                            << "\nRegenerate with a materially different musical solution that "
+                               "obeys the hard rules (monophonic bass, density budgets, "
+                               "originality thresholds, pipeline order).";
+            }
 
-        // One automatic retry when Claude returns harmony already heard in this
-        // session. The second prompt is explicit instead of silently accepting
-        // the familiar progression again. (Member access is gated on `alive`.)
-        if (alive->load() && ! rememberProgressionIfFresh (parsed.pattern))
-        {
-            auto retryUser = user + "\n\nREJECTED: that chord progression matches a recent result. "
-                "Compose a genuinely different progression now. Change the functional root motion "
-                "and at least two of: chord rhythm, extensions, inversions, or voice-leading contour.";
-            http = postChatCompletion (ep, system, retryUser, 8192, 0.9);
+            // Pattern path runs hot (0.9) so repeated requests explore new ideas.
+            auto http = postChatCompletion (ep, system, attemptUser, 8192, 0.9);
             if (! http.ok)
             {
                 resp.ok = false;
@@ -869,20 +974,67 @@ void AIClient::requestMidiPattern (const juce::String& userPrompt,
                 juce::MessageManager::callAsync ([callback, resp] { callback (resp); });
                 return;
             }
+
             parsed = parseClaudeMidiJson (http.text);
             if (! parsed.ok)
             {
+                lastError = parsed.error;
+                continue;
+            }
+
+            // Harmony-memory reject (ch.9-adjacent). Member access gated on `alive`:
+            // if the AIClient was torn down mid-loop, skip the (unsafe) `this` touch
+            // and just let this candidate through validation below instead.
+            if (alive->load() && ! rememberProgressionIfFresh (parsed.pattern) && attempt + 1 < kMaxAttempts)
+            {
+                lastError = "chord progression matches a recent result";
+                continue;
+            }
+
+            auto suite = validator.validateFullSuite (parsed.pattern, recentFpList,
+                                                      parsed.pattern.instrumentSummary());
+            if (! suite.ok)
+            {
+                lastError = suite.failures.joinIntoString (", ");
+                resp.brainValidationNotes = suite.failures;
+                resp.brainValidationNotes.addArray (suite.warnings);
+                continue;
+            }
+
+            if (suite.score > bestScore)
+            {
+                bestScore = suite.score;
+                bestPattern = parsed.pattern;
+                haveBest = true;
+            }
+            // Accept first fully valid candidate
+            haveBest = true;
+            bestPattern = parsed.pattern;
+            resp.brainValidationNotes = suite.warnings;
+            break;
+        }
+
+        if (! haveBest)
+        {
+            // Last parsed attempt even if soft-failed — only if parse succeeded once
+            if (parsed.ok)
+            {
+                bestPattern = parsed.pattern;
+                haveBest = true;
+                resp.brainValidationNotes.add ("accepted_after_validation_soft_fail");
+            }
+            else
+            {
                 resp.ok = false;
-                resp.error = parsed.error;
+                resp.error = lastError.isNotEmpty() ? lastError
+                                                    : "Brain validation rejected all candidates.";
                 juce::MessageManager::callAsync ([callback, resp] { callback (resp); });
                 return;
             }
-            if (alive->load())
-                (void) rememberProgressionIfFresh (parsed.pattern);
         }
 
         resp.ok = true;
-        resp.pattern = std::move (parsed.pattern);
+        resp.pattern = std::move (bestPattern);
         if (lockKey.isNotEmpty())
             resp.pattern.key = lockKey;
 
@@ -893,15 +1045,29 @@ void AIClient::requestMidiPattern (const juce::String& userPrompt,
             + " · " + juce::String (resp.pattern.bpm) + " BPM · "
             + juce::String (resp.pattern.bars) + " bars";
 
-        if (matchedDocs.size() > 0)
+        if (brainArch.isNotEmpty())
+            resp.assistantText << " · archetype: " << brainArch;
+        if (brainChunks > 0)
+            resp.assistantText << " · brain PDF: " << juce::String (brainChunks) << " chunks";
+
+        if (matchedDocs.size() > 0 || brainTitles.size() > 0)
         {
-            resp.assistantText << " · from docs: ";
-            for (int i = 0; i < matchedDocs.size(); ++i)
+            resp.assistantText << " · from: ";
+            juce::StringArray shown;
+            for (auto& t : brainTitles)
             {
-                if (i) resp.assistantText << ", ";
-                if (i >= 3) { resp.assistantText << "…"; break; }
-                resp.assistantText << matchedDocs[i];
+                if (shown.size() >= 3) break;
+                shown.add (t);
             }
+            for (auto& t : matchedDocs)
+            {
+                if (shown.size() >= 3) break;
+                if (! shown.contains (t))
+                    shown.add (t);
+            }
+            resp.assistantText << shown.joinIntoString (", ");
+            if (brainTitles.size() + matchedDocs.size() > shown.size())
+                resp.assistantText << "…";
         }
 
         resp.assistantText << ". Showing in preview.";

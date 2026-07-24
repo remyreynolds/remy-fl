@@ -101,18 +101,17 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
     refreshBpmLabel();
 
     generateAllButton.setComponentID ("ghost");
-    generateAllButton.setTooltip ("Generate all unlocked parts");
+    generateAllButton.setTooltip ("Generate all unlocked parts locally (no API). Ask in Chat to use Claude.");
     generateAllButton.onClick = [this] { generateFocusedParts(); };
     generateSurface.addAndMakeVisible (generateAllButton);
 
     newIdeaButton.setComponentID ("ghost");
-    newIdeaButton.setTooltip ("Roll a completely fresh idea: new seed, regenerate every "
-                              "unlocked lane via Claude+Brain when connected (or local offline).");
+    newIdeaButton.setTooltip ("Roll a fresh local idea: new seed, regenerate unlocked lanes.");
     newIdeaButton.onClick = [this] { runNewIdea(); };
-    generateSurface.addAndMakeVisible (newIdeaButton);
+    settingsSurface.addAndMakeVisible (newIdeaButton);
 
     generateLaneButton.setComponentID ("hero"); // only glowing primary per v4
-    generateLaneButton.setTooltip ("Generate the focused instrument lane (Claude+Brain when connected)");
+    generateLaneButton.setTooltip ("Generate the focused lane locally (no API). Ask in Chat to use Claude.");
     generateLaneButton.onClick = [this] { generateFocusedLane(); };
     generateSurface.addAndMakeVisible (generateLaneButton);
 
@@ -147,6 +146,7 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
     };
     generateSurface.addAndMakeVisible (varyLaneButton);
 
+    // Offline / local controls live on Settings so the Generate rail matches v4.
     useLocalButton.setComponentID ("ghost");
     useLocalButton.setTooltip ("After a Claude failure, run the local SongPlan generator instead");
     useLocalButton.setEnabled (false);
@@ -160,23 +160,24 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
             safe->refreshPanels();
         });
     };
-    generateSurface.addAndMakeVisible (useLocalButton);
+    settingsSurface.addAndMakeVisible (useLocalButton);
+    useLocalButton.setVisible (false);
 
     offlineModeButton.setComponentID ("ghost");
     offlineModeButton.setClickingTogglesState (true);
-    offlineModeButton.setTooltip ("Force the local SongPlan engine (skip Claude even if a key is set)");
+    offlineModeButton.setTooltip ("When on, Chat also skips Claude and stays fully local");
     offlineModeButton.setToggleState (processor.prefersOfflineGeneration(),
                                       juce::dontSendNotification);
     offlineModeButton.onClick = [this]
     {
         processor.setPreferOfflineGeneration (offlineModeButton.getToggleState());
         chatPanel.addAssistantMessage (offlineModeButton.getToggleState()
-            ? "Offline mode on — Generate / New Idea use the local engine only."
-            : "Offline mode off — Generate / New Idea use Claude + Brain when a key is set.");
+            ? "Offline mode on — Chat will not call Claude either."
+            : "Offline mode off — Chat can use Claude when you ask it to generate.");
         repaint (statusBadgeBounds.expanded (6));
         refreshProviderUi();
     };
-    generateSurface.addAndMakeVisible (offlineModeButton);
+    settingsSurface.addAndMakeVisible (offlineModeButton);
 
     hostSyncButton.setComponentID ("ghost");
     hostSyncButton.setClickingTogglesState (true);
@@ -448,7 +449,7 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
                 safe->refreshPanels();
             });
     };
-    generateSurface.addAndMakeVisible (dnaButton);
+    settingsSurface.addAndMakeVisible (dnaButton);
 
     humButton.setComponentID ("ghost");
     humButton.setTooltip ("Hum a melody into your mic — each held note becomes an "
@@ -1049,6 +1050,21 @@ void AIMidiGenEditor::setSurface (Surface s)
     browseTabButton.setToggleState (s == Surface::Browse, juce::dontSendNotification);
     chatTabButton.setToggleState (s == Surface::Chat, juce::dontSendNotification);
     settingsTabButton.setToggleState (s == Surface::Settings, juce::dontSendNotification);
+
+    // Focus controls live on Generate; chat surface hides them for full-bleed layout.
+    const bool showFocus = (s == Surface::Generate);
+    focusLabel.setVisible (showFocus);
+    focusCombo.setVisible (showFocus);
+
+    if (s == Surface::Chat)
+    {
+        juce::StringArray titles;
+        for (auto& d : processor.ai().knowledge().documents())
+            titles.add (d.title);
+        chatPanel.setDocTitles (titles);
+        chatPanel.setDocsStatus (processor.ai().knowledge().statusLine());
+    }
+
     resized();
     repaint();
 }
@@ -1245,10 +1261,21 @@ void AIMidiGenEditor::handlePrompt (const juce::String& prompt)
             if (safe->processor.lastCriticSummary().isNotEmpty())
                 safe->chatPanel.addAssistantMessage (safe->processor.lastCriticSummary());
 
+            {
+                ChatPanel::SessionRun run;
+                run.seed = juce::String ((juce::int64) safe->processor.params().seed);
+                run.harmony = safe->processor.lastHarmonyFingerprint();
+                if (run.harmony.length() > 28)
+                    run.harmony = run.harmony.substring (0, 28) + "…";
+                run.timeLabel = "now";
+                safe->chatPanel.addSessionRun (run);
+            }
+
             safe->chatPanel.clearMidiAttachment();
             safe->refreshBpmLabel();
             safe->refreshPanels();
             safe->refreshSoundControls();
+            safe->refreshLastRunMeta();
 
             if (! safe->previewButton.getToggleState())
             {
@@ -1789,7 +1816,22 @@ void AIMidiGenEditor::applyWorkspaceFocus()
 
 void AIMidiGenEditor::reportGeneration (const GenerationReport& report, bool offerLocal)
 {
-    useLocalButton.setEnabled (offerLocal && processor.hasPendingLocalOffer());
+    const bool showLocal = offerLocal && processor.hasPendingLocalOffer();
+    useLocalButton.setVisible (showLocal);
+    useLocalButton.setEnabled (showLocal);
+    if (showLocal)
+    {
+        // Temporarily surface on the Generate rail under Vary (v4 keeps this empty otherwise).
+        auto rail = rightCardBounds.reduced (14, 16);
+        // Approximate: after Genre(14+36+10) + Generate(44+8) + All(40+8) + Vary(40+8) + Undo(40)
+        const int y = rail.getY() + 14 + 36 + 10 + 44 + 8 + 40 + 8 + 40 + 8 + 40 + 10;
+        useLocalButton.setBounds (rail.getX(), y, rail.getWidth(), 36);
+        generateSurface.addAndMakeVisible (useLocalButton);
+    }
+    else
+    {
+        settingsSurface.addAndMakeVisible (useLocalButton);
+    }
 
     if (report.mode == GenerationMode::FailedClaude)
     {
@@ -1824,6 +1866,18 @@ void AIMidiGenEditor::reportGeneration (const GenerationReport& report, bool off
     if (! report.fingerprint.empty())
         msg << " · harmony " << report.fingerprint;
     chatPanel.addAssistantMessage (msg);
+
+    {
+        ChatPanel::SessionRun run;
+        run.seed = juce::String ((juce::int64) processor.params().seed);
+        run.harmony = report.fingerprint.empty()
+                        ? juce::String (processor.lastHarmonyFingerprint())
+                        : juce::String (report.fingerprint);
+        if (run.harmony.length() > 28)
+            run.harmony = run.harmony.substring (0, 28) + "…";
+        run.timeLabel = "now";
+        chatPanel.addSessionRun (run);
+    }
 
     if (processor.lastCriticSummary().isNotEmpty())
         chatPanel.addAssistantMessage (processor.lastCriticSummary());
@@ -2152,7 +2206,7 @@ void AIMidiGenEditor::resized()
     exportAllButton.setBounds (footer.removeFromRight (100).withSizeKeepingCentre (100, 36));
     footer.removeFromRight (8);
     previewButton.setBounds (footer.removeFromRight (104).withSizeKeepingCentre (104, 36));
-    previewButton.setComponentID ("primary");
+    previewButton.setComponentID ("hero"); // only glowing primary in footer per v4
     footer.removeFromRight (8);
     hostMidiButton.setBounds (footer.removeFromRight (86).withSizeKeepingCentre (86, 36));
     footer.removeFromRight (6);
@@ -2196,17 +2250,8 @@ void AIMidiGenEditor::layoutGenerateSurface()
         rail.removeFromTop (8);
         varyLaneButton.setBounds (rail.removeFromTop (40));
         rail.removeFromTop (8);
-        useLocalButton.setBounds (rail.removeFromTop (36));
-        rail.removeFromTop (6);
-        offlineModeButton.setBounds (rail.removeFromTop (32));
-        rail.removeFromTop (8);
         undoButton.setBounds (rail.removeFromTop (40));
         rail.removeFromTop (8);
-        newIdeaButton.setBounds (rail.removeFromTop (36));
-        rail.removeFromTop (6);
-        if (dnaButton.isVisible())
-            dnaButton.setBounds (rail.removeFromTop (36));
-        rail.removeFromTop (6);
         humButton.setBounds (rail.removeFromTop (36));
         if (humStatusLabel.isVisible())
         {
@@ -2214,10 +2259,17 @@ void AIMidiGenEditor::layoutGenerateSurface()
             humStatusLabel.setBounds (rail.removeFromTop (14));
         }
 
-        // LAST RUN pinned to bottom
+        // LAST RUN pinned to bottom (v4)
         auto meta = rail.removeFromBottom (72);
         lastRunTitle.setBounds (meta.removeFromTop (16));
         lastRunMeta.setBounds (meta);
+
+        // Extra generation tools live on Settings — clear leftover rail slots
+        // (newIdeaButton/dnaButton positioned there, not in this Generate rail).
+        newIdeaButton.setBounds ({});
+        dnaButton.setBounds ({});
+        useLocalButton.setBounds ({});
+        offlineModeButton.setBounds ({});
     }
 
     auto leftOuter = r.removeFromLeft (308);
@@ -2316,15 +2368,10 @@ void AIMidiGenEditor::layoutBrowseSurface()
 
 void AIMidiGenEditor::layoutChatSurface()
 {
-    auto r = chatSurface.getLocalBounds().reduced (12, 10);
-
-    auto row1 = r.removeFromTop (30);
-    focusLabel.setBounds (row1.removeFromLeft (50));
-    row1.removeFromLeft (6);
-    focusCombo.setBounds (row1.removeFromLeft (180).reduced (0, 1));
-    r.removeFromTop (8);
-
-    chatPanel.setBounds (r);
+    // Full-bleed liquid-glass chat (design 2a) — focus stays on Generate.
+    focusLabel.setVisible (false);
+    focusCombo.setVisible (false);
+    chatPanel.setBounds (chatSurface.getLocalBounds().reduced (8, 6));
 }
 
 void AIMidiGenEditor::layoutSettingsSurface()
@@ -2355,6 +2402,20 @@ void AIMidiGenEditor::layoutSettingsSurface()
     auto row4 = r.removeFromTop (24);
     row4.removeFromLeft (76); // align under the key field
     keyTestStatus.setBounds (row4);
+    r.removeFromTop (gap);
+
+    // Generation extras (kept off the v4 Generate rail)
+    auto tools = r.removeFromTop (28);
+    tools.removeFromLeft (70);
+    offlineModeButton.setBounds (tools.removeFromLeft (100).reduced (0, 1));
+    tools.removeFromLeft (8);
+    useLocalButton.setBounds (tools.removeFromLeft (160).reduced (0, 1));
+    r.removeFromTop (gap);
+    auto tools2 = r.removeFromTop (28);
+    tools2.removeFromLeft (70);
+    newIdeaButton.setBounds (tools2.removeFromLeft (120).reduced (0, 1));
+    tools2.removeFromLeft (8);
+    dnaButton.setBounds (tools2.removeFromLeft (120).reduced (0, 1));
 }
 
 void AIMidiGenEditor::syncEffectiveMutes()
