@@ -73,6 +73,25 @@ InstrumentPanel::InstrumentPanel (InstrumentType t) : type (t)
     };
     addAndMakeVisible (soundCombo);
 
+    sampleLabel.setFont (CustomLookAndFeel::font (10.0f, juce::Font::bold));
+    sampleLabel.setColour (juce::Label::textColourId, CustomLookAndFeel::txt2);
+    addAndMakeVisible (sampleLabel);
+
+    sampleCombo.setTextWhenNothingSelected ("Pack sound…");
+    sampleCombo.setTooltip ("Pick an imported sample (e.g. a Serum one-shot) for this part, or use the built-in synth");
+    sampleCombo.onChange = [this]
+    {
+        if (suppressSampleCallback) return;
+        if (! onSampleChanged) return;
+        // Index 0 = built-in synth; 1..N map into sampleIds (more reliable than item IDs).
+        const int idx = sampleCombo.getSelectedItemIndex();
+        if (idx <= 0)
+            onSampleChanged ({});
+        else if (juce::isPositiveAndBelow (idx - 1, sampleIds.size()))
+            onSampleChanged (sampleIds[idx - 1]);
+    };
+    addAndMakeVisible (sampleCombo);
+
     generateBtn.setComponentID ("primary");
     generateBtn.onClick = [this] { if (onGenerate) onGenerate(); };
     addAndMakeVisible (generateBtn);
@@ -148,6 +167,8 @@ void InstrumentPanel::updateMinimizedUi()
     midiCombo.setVisible (show);
     synthLabel.setVisible (show);
     soundCombo.setVisible (show);
+    sampleLabel.setVisible (show);
+    sampleCombo.setVisible (show);
     generateBtn.setVisible (show);
     varyBtn.setVisible (show);
     continueBtn.setVisible (show);
@@ -224,6 +245,36 @@ void InstrumentPanel::setMidiLoopOptions (const std::vector<const MidiEntry*>& o
     suppressMidiCallback = false;
 }
 
+void InstrumentPanel::setSampleOptions (const std::vector<const SampleEntry*>& options,
+                                        const juce::String& selectedId)
+{
+    suppressSampleCallback = true;
+    sampleCombo.clear (juce::dontSendNotification);
+    sampleIds.clear();
+    sampleCombo.addItem ("(built-in synth)", 1);
+
+    int selectId = 1;
+    int nextId = 2;
+    for (auto* e : options)
+    {
+        if (e == nullptr) continue;
+        const auto label = juce::String (toString (e->role)) + " · " + e->name;
+        sampleCombo.addItem (label, nextId);
+        sampleIds.add (e->id);
+        if (e->id == selectedId)
+            selectId = nextId;
+        ++nextId;
+    }
+
+    if (options.empty())
+        sampleCombo.setTextWhenNothingSelected ("No pack sounds");
+    else
+        sampleCombo.setTextWhenNothingSelected (juce::String ((int) options.size()) + " sounds…");
+
+    sampleCombo.setSelectedId (selectId, juce::dontSendNotification);
+    suppressSampleCallback = false;
+}
+
 void InstrumentPanel::setHasContent (bool has)
 {
     hasContent = has;
@@ -277,6 +328,11 @@ void InstrumentPanel::resized()
     auto synthRow = r.removeFromTop (28);
     synthLabel.setBounds (synthRow.removeFromLeft (36));
     soundCombo.setBounds (synthRow);
+
+    r.removeFromTop (4);
+    auto sampleRow = r.removeFromTop (28);
+    sampleLabel.setBounds (sampleRow.removeFromLeft (36));
+    sampleCombo.setBounds (sampleRow);
 
     r.removeFromTop (4);
     auto volRow = r.removeFromTop (16);

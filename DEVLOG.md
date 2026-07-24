@@ -1,5 +1,41 @@
 # AI MIDI Gen — Development Log
 
+## 2026-07-23 — Per-lane sample picker: import your own Serum (or any) one-shots
+
+The previous entry added two new *synthesized* Serum-style timbres and
+hum-to-chords, but the literal "bring your own rendered Serum sound" path was
+still one-sided: `DrumKitPanel` already let you assign an imported WAV per
+drum piece, but the melodic lanes (Melody/Chords/Bass/CounterMelody/Arp/Pad)
+had no equivalent — `InstrumentPanel` only exposed the built-in synth-timbre
+dropdown, even though the processor/synth plumbing for it
+(`setPartSampleId`/`getPartSampleId`, `PreviewSynth::partSamples`) already
+existed unused.
+
+- `InstrumentPanel` gained a "Sample" combo box, mirroring `DrumKitPanel`'s
+  existing per-piece picker exactly: item 0 is "(built-in synth)", followed
+  by every sample in the active pack/filter labelled `Role · name`, selecting
+  by list index (not JUCE combo IDs, so ids are stable no matter how the
+  library is filtered/reordered).
+- `PluginEditor::refreshSampleControls()` now actually populates that combo
+  for every non-Drums lane via the existing `buildOpts(SampleRole)` helper,
+  preferring `roleForInstrumentType(type)` (Melody/CounterMelody/Arp → Lead,
+  Chords → Keys, Bass → Bass, Pad → Pad) but never restricting the menu to
+  just that role — the dead "no-op: InstrumentPanel no longer has pack
+  sample pickers" loop is gone.
+- `panel->onSampleChanged` is wired to `processor.setPartSampleId` +
+  `syncSamplesToSynth()`, same pattern as the drum-kit callback.
+- `SampleLibrary::classifyName()` now recognizes common Serum-export
+  naming conventions it previously missed — `arp`, `growl`, `wobble`,
+  `acid`, `laser` → Lead; `pad`, `atmos`, `ambient`, `drone`, `swell`,
+  `airy` → the new `SampleRole::Pad` (added alongside
+  `roleForInstrumentType()` in the prior commit) — so imported packs using
+  those folder/file names auto-sort into the right lane's preferred slot
+  instead of falling through to "Other".
+
+### Validation
+- Full CMake+Ninja rebuild (VST3/Standalone/tests) after these four file
+  changes; see commit for pass/fail status of the native test suite.
+
 ## 2026-07-23 — Brain-grounding audit, two new Serum-style sounds, hum-to-chords
 
 **Audit: "MIDIs suck" — is generation actually routing through the Brain?**

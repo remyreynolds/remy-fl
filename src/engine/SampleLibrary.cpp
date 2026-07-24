@@ -69,8 +69,15 @@ SampleRole SampleLibrary::classifyName (const juce::String& fileOrFolderName)
     if (n.contains ("piano") || n.contains ("keys") || n.contains ("rhodes")
         || n.contains ("chord") || n.contains ("epiano") || n.contains ("e-piano"))
         return SampleRole::Keys;
+    if (n.contains ("arp") || n.contains ("growl") || n.contains ("wobble") || n.contains ("grow")
+        || n.contains ("acid") || n.contains ("screech") || n.contains ("laser"))
+        return SampleRole::Lead;
     if (n.contains ("lead") || n.contains ("synth") || n.contains ("pluck") || n.contains ("stab"))
         return SampleRole::Lead;
+
+    if (n.contains ("pad") || n.contains ("atmos") || n.contains ("ambient") || n.contains ("drone")
+        || n.contains ("swell") || n.contains ("airy"))
+        return SampleRole::Pad;
 
     return SampleRole::Other;
 }

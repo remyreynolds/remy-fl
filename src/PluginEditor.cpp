@@ -771,6 +771,14 @@ AIMidiGenEditor::AIMidiGenEditor (AIMidiGenProcessor& p)
                     juce::String (toString (type)) + " loaded MIDI loop — Preview to hear it.");
             refreshPanels();
         };
+        panel->onSampleChanged = [this, type] (juce::String id)
+        {
+            processor.setPartSampleId (type, id);
+            processor.syncSamplesToSynth();
+            if (id.isNotEmpty())
+                chatPanel.addAssistantMessage (
+                    juce::String (toString (type)) + " now using imported sample for preview.");
+        };
         panel->onMinimizeChanged = [this] { resized(); };
         panel->requestMidiFile = [this, type] () -> juce::File
         {
@@ -1666,11 +1674,15 @@ void AIMidiGenEditor::refreshSampleControls()
                                        processor.getDrumSampleId (piece));
     }
 
-    // Pitched instruments never use drum-kit one-shots
+    // Pitched instruments: offer imported one-shots too (e.g. a rendered Serum
+    // patch), ordered by the lane's preferred role but never restricted to it.
     for (int t = 0; t < (int) InstrumentType::NumTypes; ++t)
     {
-        // no-op: InstrumentPanel no longer has pack sample pickers
-        juce::ignoreUnused (t);
+        const auto type = (InstrumentType) t;
+        if (type == InstrumentType::Drums || panels[(size_t) t] == nullptr)
+            continue;
+        panels[(size_t) t]->setSampleOptions (buildOpts (roleForInstrumentType (type)),
+                                              processor.getPartSampleId (type));
     }
 
     processor.syncSamplesToSynth();

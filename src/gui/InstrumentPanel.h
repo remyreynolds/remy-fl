@@ -25,6 +25,7 @@ public:
     std::function<void (PartTimbre)> onTimbreChanged;
     std::function<void (float)>      onVolumeChanged;
     std::function<void (juce::String)> onMidiLoopChanged; // empty = keep / AI generate
+    std::function<void (juce::String)> onSampleChanged;   // empty id = built-in synth
     std::function<void()>            onMinimizeChanged;
     std::function<juce::File()>      requestMidiFile;
 
@@ -35,11 +36,13 @@ public:
     void setSoundOptions (const std::vector<PartTimbre>& options, PartTimbre selected);
     void setMidiLoopOptions (const std::vector<const MidiEntry*>& options,
                              const juce::String& selectedId);
+    void setSampleOptions (const std::vector<const SampleEntry*>& options,
+                           const juce::String& selectedId);
     void setAiBusy (bool busy);
 
     bool isMinimized() const { return minimized; }
     void setMinimized (bool shouldMinimize);
-    int preferredHeight() const { return minimized ? 34 : 200; }
+    int preferredHeight() const { return minimized ? 34 : 232; }
 
     void resized() override;
     void paint (juce::Graphics&) override;
@@ -55,6 +58,8 @@ private:
     juce::ComboBox  midiCombo;
     juce::Label     synthLabel { {}, "Synth" };
     juce::ComboBox  soundCombo;
+    juce::Label     sampleLabel { {}, "Sample" };
+    juce::ComboBox  sampleCombo;
     juce::TextButton generateBtn { "Generate" };
     juce::TextButton varyBtn    { "Vary" };
     juce::TextButton continueBtn{ "Continue" };
@@ -69,7 +74,9 @@ private:
     bool suppressVolCallback = false;
     bool suppressTimbreCallback = false;
     bool suppressMidiCallback = false;
+    bool suppressSampleCallback = false;
     juce::StringArray midiIds;
+    juce::StringArray sampleIds;
 
     void updateMinimizedUi();
     void updateActionEnabled();

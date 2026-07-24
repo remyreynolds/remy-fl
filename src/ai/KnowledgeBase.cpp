@@ -38,36 +38,37 @@ void KnowledgeBase::writeStarterDocIfEmpty()
     // Prefer the shipped Groovewright master prompt from the repo when present.
     {
         const auto dest = folder().getChildFile ("master-system-prompt.md");
+        // Hidden marker: the exact text we last auto-synced into `dest`. Used
+        // to tell "user hand-edited their copy" (leave alone) apart from
+        // "still the stock doc, safe to upgrade" (see below).
+        const auto syncMarker = folder().getChildFile (".master-system-prompt.synced.md");
+
         int bundledMasterSize = 0;
         const auto* bundledMasterData = BinaryData::getNamedResource (
             "master_system_prompt_md", bundledMasterSize);
-        const juce::String bundledMaster = bundledMasterData != nullptr
+        juce::String bundledMaster = bundledMasterData != nullptr
             ? juce::String (bundledMasterData, (size_t) juce::jmax (0, bundledMasterSize))
             : juce::String();
-        // Only seed the master prompt when the file doesn't exist yet —
-        // rewriting it on every construction would clobber user edits.
-        if (! dest.existsAsFile() && bundledMaster.trim().isNotEmpty())
-            dest.replaceWithText (bundledMaster);
 
-        juce::File shipped;
-        // Standalone / dev: look next to cwd and common relative roots
-        const juce::File candidates[] = {
-            juce::File::getCurrentWorkingDirectory().getChildFile ("brain/2-prompts/master-system-prompt.md"),
-            juce::File::getCurrentWorkingDirectory().getChildFile ("brain/master-system-prompt.md"),
-            juce::File::getSpecialLocation (juce::File::currentExecutableFile)
-                .getParentDirectory().getParentDirectory().getParentDirectory()
-                .getParentDirectory().getChildFile ("brain/2-prompts/master-system-prompt.md"),
-            juce::File::getSpecialLocation (juce::File::currentExecutableFile)
-                .getParentDirectory().getParentDirectory().getParentDirectory()
-                .getParentDirectory().getChildFile ("brain/master-system-prompt.md"),
-        };
-        for (auto& c : candidates)
-            if (c.existsAsFile()) { shipped = c; break; }
+        if (bundledMaster.trim().isEmpty())
+        {
+            // Standalone / dev: look next to cwd and common relative roots
+            const juce::File candidates[] = {
+                juce::File::getCurrentWorkingDirectory().getChildFile ("brain/2-prompts/master-system-prompt.md"),
+                juce::File::getCurrentWorkingDirectory().getChildFile ("brain/master-system-prompt.md"),
+                juce::File::getSpecialLocation (juce::File::currentExecutableFile)
+                    .getParentDirectory().getParentDirectory().getParentDirectory()
+                    .getParentDirectory().getChildFile ("brain/2-prompts/master-system-prompt.md"),
+                juce::File::getSpecialLocation (juce::File::currentExecutableFile)
+                    .getParentDirectory().getParentDirectory().getParentDirectory()
+                    .getParentDirectory().getChildFile ("brain/master-system-prompt.md"),
+            };
+            for (auto& c : candidates)
+                if (c.existsAsFile()) { bundledMaster = c.loadFileAsString(); break; }
+        }
 
-        if (! dest.existsAsFile() && shipped.existsAsFile())
-            shipped.copyFileTo (dest);
-        else if (! dest.existsAsFile())
-            ensureDoc ("master-system-prompt.md",
+        if (bundledMaster.trim().isEmpty())
+            bundledMaster =
 R"(# MASTER SYSTEM PROMPT — Groovewright
 
 You are Groovewright, a multi-genre MIDI agent. Groove over theory. Loop-first. Leave space.
@@ -76,7 +77,36 @@ piano), hip-hop/trap, techno, pop, and classical each have distinct tempo, harmo
 drum-pattern conventions. Never default to a house four-on-the-floor groove for a non-house genre.
 Generate authentic MIDI for that genre; never clone copyrighted melodies.
 When generating, return ONLY the plugin MIDI JSON schema (pitch names + startBeat + durationBeats).
-)", true);
+)";
+
+        if (! dest.existsAsFile())
+        {
+            // First run: seed from the best available source and remember it
+            // so a future app update can tell this copy is still stock.
+            dest.replaceWithText (bundledMaster);
+            syncMarker.replaceWithText (bundledMaster);
+        }
+        else if (dest.loadFileAsString().trim() != bundledMaster.trim())
+        {
+            // A newer bundled prompt is available. Auto-upgrade unless the
+            // user's copy has diverged from the last version we ourselves
+            // wrote (i.e. they hand-edited it) — that customization is
+            // preserved. Installs from before this marker existed are
+            // treated as stock, since matching the exact wording of every
+            // prior shipped revision isn't tractable and real brain-doc
+            // fixes (like the house-genre-bias correction) need to actually
+            // reach existing users.
+            const auto currentText = dest.loadFileAsString().trim();
+            const auto lastSyncedText = syncMarker.existsAsFile()
+                ? syncMarker.loadFileAsString().trim() : juce::String();
+            const bool looksHandEdited = syncMarker.existsAsFile() && currentText != lastSyncedText;
+
+            if (! looksHandEdited)
+            {
+                dest.replaceWithText (bundledMaster);
+                syncMarker.replaceWithText (bundledMaster);
+            }
+        }
     }
 
     // Always ensure the mix guide exists (preview volumes follow this knowledge).
