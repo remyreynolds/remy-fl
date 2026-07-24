@@ -940,6 +940,21 @@ void AIMidiGenEditor::setSurface (Surface s)
     browseTabButton.setToggleState (s == Surface::Browse, juce::dontSendNotification);
     chatTabButton.setToggleState (s == Surface::Chat, juce::dontSendNotification);
     settingsTabButton.setToggleState (s == Surface::Settings, juce::dontSendNotification);
+
+    // Focus controls live on Generate; chat surface hides them for full-bleed layout.
+    const bool showFocus = (s == Surface::Generate);
+    focusLabel.setVisible (showFocus);
+    focusCombo.setVisible (showFocus);
+
+    if (s == Surface::Chat)
+    {
+        juce::StringArray titles;
+        for (auto& d : processor.ai().knowledge().documents())
+            titles.add (d.title);
+        chatPanel.setDocTitles (titles);
+        chatPanel.setDocsStatus (processor.ai().knowledge().statusLine());
+    }
+
     resized();
     repaint();
 }
@@ -1055,10 +1070,21 @@ void AIMidiGenEditor::handlePrompt (const juce::String& prompt)
             if (safe->processor.lastCriticSummary().isNotEmpty())
                 safe->chatPanel.addAssistantMessage (safe->processor.lastCriticSummary());
 
+            {
+                ChatPanel::SessionRun run;
+                run.seed = juce::String ((juce::int64) safe->processor.params().seed);
+                run.harmony = safe->processor.lastHarmonyFingerprint();
+                if (run.harmony.length() > 28)
+                    run.harmony = run.harmony.substring (0, 28) + "…";
+                run.timeLabel = "now";
+                safe->chatPanel.addSessionRun (run);
+            }
+
             safe->chatPanel.clearMidiAttachment();
             safe->refreshBpmLabel();
             safe->refreshPanels();
             safe->refreshSoundControls();
+            safe->refreshLastRunMeta();
 
             if (! safe->previewButton.getToggleState())
             {
@@ -1637,6 +1663,18 @@ void AIMidiGenEditor::reportGeneration (const GenerationReport& report, bool off
         msg << " · harmony " << report.fingerprint;
     chatPanel.addAssistantMessage (msg);
 
+    {
+        ChatPanel::SessionRun run;
+        run.seed = juce::String ((juce::int64) processor.params().seed);
+        run.harmony = report.fingerprint.empty()
+                        ? juce::String (processor.lastHarmonyFingerprint())
+                        : juce::String (report.fingerprint);
+        if (run.harmony.length() > 28)
+            run.harmony = run.harmony.substring (0, 28) + "…";
+        run.timeLabel = "now";
+        chatPanel.addSessionRun (run);
+    }
+
     if (processor.lastCriticSummary().isNotEmpty())
         chatPanel.addAssistantMessage (processor.lastCriticSummary());
 
@@ -2092,15 +2130,10 @@ void AIMidiGenEditor::layoutBrowseSurface()
 
 void AIMidiGenEditor::layoutChatSurface()
 {
-    auto r = chatSurface.getLocalBounds().reduced (12, 10);
-
-    auto row1 = r.removeFromTop (30);
-    focusLabel.setBounds (row1.removeFromLeft (50));
-    row1.removeFromLeft (6);
-    focusCombo.setBounds (row1.removeFromLeft (180).reduced (0, 1));
-    r.removeFromTop (8);
-
-    chatPanel.setBounds (r);
+    // Full-bleed liquid-glass chat (design 2a) — focus stays on Generate.
+    focusLabel.setVisible (false);
+    focusCombo.setVisible (false);
+    chatPanel.setBounds (chatSurface.getLocalBounds().reduced (8, 6));
 }
 
 void AIMidiGenEditor::layoutSettingsSurface()

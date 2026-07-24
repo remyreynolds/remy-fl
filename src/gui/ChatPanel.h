@@ -7,11 +7,20 @@
 
 namespace aimidi
 {
-/** Cursor-like agent chat: bubbled messages, thinking row, @ context, composer. */
+/** ComposerAI Chat — liquid-glass redesign (design doc option 2a).
+    Centered conversation + frosted composer + Runs/Seeds/Docs rail. */
 class ChatPanel : public juce::Component,
                   private juce::Timer
 {
 public:
+    struct SessionRun
+    {
+        juce::String seed;
+        juce::String harmony;
+        juce::String timeLabel;
+        juce::StringArray chords;
+    };
+
     ChatPanel();
     ~ChatPanel() override;
 
@@ -22,6 +31,8 @@ public:
 
     void addUserMessage (const juce::String& text);
     void addAssistantMessage (const juce::String& text);
+    void addSessionRun (const SessionRun& run);
+    void setDocTitles (const juce::StringArray& titles);
     void setBusy (bool busy);
     void setDocsStatus (const juce::String& status);
     void setModelLabel (const juce::String& modelName);
@@ -33,6 +44,7 @@ public:
 
 private:
     enum class Role { User, Assistant, Thinking };
+    enum class RailTab { Runs, Seeds, Docs };
 
     class Bubble : public juce::Component
     {
@@ -67,6 +79,24 @@ private:
         int totalHeight = 0;
     };
 
+    class RailList : public juce::Component
+    {
+    public:
+        void setRuns (const std::vector<SessionRun>& runs);
+        void setSeeds (const juce::StringArray& seeds);
+        void setDocs (const juce::StringArray& docs);
+        void setMode (RailTab tab);
+        void paint (juce::Graphics&) override;
+        int contentHeight() const { return totalH; }
+
+    private:
+        RailTab mode = RailTab::Runs;
+        std::vector<SessionRun> runs;
+        juce::StringArray seeds, docs;
+        int totalH = 40;
+        void rebuild();
+    };
+
     void fireSend();
     void toggleAttachMidi();
     void pushQuick (const juce::String& prompt);
@@ -74,15 +104,15 @@ private:
     void scrollToBottom();
     void timerCallback() override;
     void updateSuggestionVisibility();
+    void setRailTab (RailTab t);
+    void refreshRail();
 
-    juce::Label titleLabel { {}, "Agent" };
-    juce::Label modelLabel;
-    juce::Label docsLabel;
+    // Header
+    juce::Label titleLabel { {}, "Chat" };
+    juce::Label modelBadge;
     juce::TextButton newChatButton { "New" };
-    juce::TextButton attachMidiButton { "@ MIDI" };
-    juce::TextButton addDocsButton { "@ Docs" };
-    juce::TextButton openDocsButton { "Brain" };
 
+    // Main column
     juce::Viewport viewport;
     ThreadContent thread;
 
@@ -91,16 +121,37 @@ private:
     juce::TextButton tipBass { "Bassline" };
     juce::TextButton tipTheory { "Melody" };
 
+    juce::TextButton attachMidiButton { "@ MIDI" };
+    juce::TextButton addDocsButton { "@ Docs" };
+    juce::TextButton openDocsButton { "Brain" };
+
     juce::TextEditor input;
     juce::TextButton sendButton { "↑" };
     juce::Label contextChip;
+
+    // Right rail
+    juce::TextButton runsTab { "Runs" };
+    juce::TextButton seedsTab { "Seeds" };
+    juce::TextButton docsTab { "Docs" };
+    juce::Viewport railViewport;
+    RailList railList;
+    juce::Label railFooter;
+
+    juce::Rectangle<int> chatColumnBounds;
+    juce::Rectangle<int> railBounds;
     juce::Rectangle<int> composerBounds;
+    juce::Rectangle<int> chipRowBounds;
 
     bool busy = false;
     int thinkingTick = 0;
     juce::String attachedMidiContext;
     juce::String docsStatusText { "No theory docs" };
+    juce::String modelNameText { "claude-sonnet-4-5" };
     bool hasUserMessage = false;
+    RailTab railTab = RailTab::Runs;
+    std::vector<SessionRun> sessionRuns;
+    juce::StringArray pinnedSeeds;
+    juce::StringArray docTitles;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ChatPanel)
 };

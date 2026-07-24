@@ -25,6 +25,7 @@ public:
     static inline const juce::Colour accentDim { 0xffE84848 };
     static inline const juce::Colour accentHi  { 0xffFF7A66 };
     static inline const juce::Colour success { 0xff30D158 };
+    static inline const juce::Colour& ok = success;
     static inline const juce::Colour warn  { 0xffFF9F0A };
     static inline const juce::Colour danger{ 0xffFF375F };
     static inline const juce::Colour userBubble { 0xff242428 };
@@ -127,6 +128,21 @@ public:
             return;
         }
 
+        if (id == "railTab")
+        {
+            if (on)
+            {
+                g.setColour (accent);
+                g.fillRoundedRectangle (r, radiusPill);
+            }
+            else if (over || down)
+            {
+                g.setColour (juce::Colours::white.withAlpha (0.08f));
+                g.fillRoundedRectangle (r, radiusPill);
+            }
+            return;
+        }
+
         if (outline)
         {
             g.setColour (over || down ? juce::Colour (0x21ffffff) : juce::Colour (0x12ffffff));
@@ -192,6 +208,8 @@ public:
             c = txt2;
         else if (id == "ghost" && ! on)
             c = txt2;
+        else if (id == "railTab")
+            c = on ? juce::Colours::white : txt2;
         if (! b.isEnabled())
             c = txt2.withMultipliedAlpha (0.7f);
         g.setColour (c);
@@ -254,6 +272,13 @@ public:
         if (style == juce::Font::bold)
             opts = opts.withStyle ("Bold");
         return juce::Font (std::move (opts));
+    }
+
+    static juce::Font mono (float size)
+    {
+        return juce::Font (juce::FontOptions()
+                               .withName (juce::Font::getDefaultMonospacedFontName())
+                               .withHeight (size));
     }
 
     /** VST v4 card surface */
@@ -378,7 +403,26 @@ public:
 
     static void drawChatSurface (juce::Graphics& g, juce::Rectangle<int> bounds)
     {
-        fillBackdrop (g, bounds);
+        // Liquid-glass aurora ground (design 2a)
+        g.setColour (juce::Colour (0xff171514));
+        g.fillRect (bounds);
+
+        auto r = bounds.toFloat();
+        juce::ColourGradient a (accent.withAlpha (0.22f),
+                                r.getX() + r.getWidth() * 0.12f, r.getY() - 20.0f,
+                                juce::Colours::transparentBlack,
+                                r.getX() + r.getWidth() * 0.45f, r.getY() + r.getHeight() * 0.55f,
+                                true);
+        g.setGradientFill (a);
+        g.fillEllipse (r.getX() - 40.0f, r.getY() - 80.0f, 420.0f, 360.0f);
+
+        juce::ColourGradient b (accent.withAlpha (0.12f),
+                                r.getRight() - 40.0f, r.getBottom() + 20.0f,
+                                juce::Colours::transparentBlack,
+                                r.getX() + r.getWidth() * 0.55f, r.getY() + r.getHeight() * 0.4f,
+                                true);
+        g.setGradientFill (b);
+        g.fillEllipse (r.getRight() - 380.0f, r.getBottom() - 320.0f, 460.0f, 380.0f);
     }
 
     static void drawComposerShell (juce::Graphics& g, juce::Rectangle<int> bounds)

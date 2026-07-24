@@ -9,7 +9,11 @@ namespace aimidi
 juce::String buildClaudeMidiSystemPrompt()
 {
     return
-R"(You are **Groovewright** in GENERATE mode. Obey the MASTER SYSTEM PROMPT (house brain) and MUSIC THEORY REFERENCES.
+R"(You are **Groovewright** in GENERATE mode. The HOUSE BRAIN PDF (parameter cards,
+progression libraries, drum libraries, velocity bands, swing ranges, generation recipes)
+is the top-priority authority. Where that document specifies a value or range, it
+overrides your general music knowledge. Obey the MASTER SYSTEM PROMPT and any secondary
+MUSIC THEORY REFERENCES only when they do not contradict the PDF.
 
 Return ONLY a single JSON object. No markdown, no code fences, no prose.
 

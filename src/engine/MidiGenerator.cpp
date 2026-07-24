@@ -59,51 +59,160 @@ GeneratedPart MidiGenerator::generateChordsWithMode (const MusicParams& p,
     // skeleton bass/arp/melody/critic use, with bar-to-bar voice-leading.
     const auto plan = buildSongPlan (p, tones);
 
+    // Pick a groove contour for this take (seeded via rng). House chords should
+    // change placement + length across bars, not stamp the same grid forever.
+    const int groovePick = (int) (rand01() * 4.0f) % 4;
+    const float dens = std::clamp (p.noteDensity, 0.0f, 1.0f);
+    const float energy = std::clamp (p.energy, 0.0f, 1.0f);
+    const float rhythm = std::clamp (p.rhythmComplexity, 0.0f, 1.0f);
+
+    auto pushVoicing = [&] (double start, double len, const std::vector<int>& chord,
+                            float velBase, bool thin = false)
+    {
+        if (chord.empty() || len <= 0.05) return;
+        const double startClamped = std::max (0.0, start);
+        for (size_t i = 0; i < chord.size(); ++i)
+        {
+            // Occasionally omit an upper extension so voicings aren't identical slabs.
+            if (thin && i + 1 == chord.size() && chord.size() >= 4 && rand01() < 0.45f)
+                continue;
+            if (thin && i == 1 && chord.size() >= 3 && rand01() < 0.2f)
+                continue;
+            const float vel = std::clamp (velBase + (rand01() - 0.5f) * 0.12f, 0.35f, 0.95f);
+            const double noteLen = std::max (0.08, len * (0.88 + rand01() * 0.2));
+            part.notes.push_back ({ startClamped, noteLen, chord[i], vel });
+        }
+    };
+
     for (int bar = 0; bar < p.bars; ++bar)
     {
         const auto& chord = plan.chords[(size_t) bar];
         const double b0 = bar * 4.0;
+        // Per-bar micro-variation so consecutive bars don't clone each other.
+        const double barNudge = (rand01() - 0.5) * 0.03 * (0.35 + p.humanize);
 
         switch (mode)
         {
             case ChordMode::Sustained:
-                for (int n : chord)
-                    part.notes.push_back ({ b0, 3.9, n, 0.62f + rand01() * 0.08f });
-                break;
-
-            case ChordMode::Stabs:
             {
-                // Sparse, punchy hits — timing/velocity take a little seed-driven air
-                // so regenerating never pastes the exact same MIDI blob.
-                const double hitch = (rand01() - 0.5) * 0.04;
-                for (int n : chord)
+                // Hold + optional mid-bar reattack / breath — lengths vary.
+                const int shape = (groovePick + bar) % 3;
+                if (shape == 0)
                 {
-                    part.notes.push_back ({ b0 + hitch,        0.4, n, 0.75f + rand01() * 0.1f });
-                    part.notes.push_back ({ b0 + 2.5 + hitch,  0.35, n, 0.65f + rand01() * 0.1f });
-                    if (p.energy > 0.65f)
-                        part.notes.push_back ({ b0 + 1.75 + hitch, 0.3, n, 0.55f + rand01() * 0.1f });
+                    // Long pad with a slight early cut so the next bar can breathe.
+                    const double len = 3.2 + rand01() * 0.7; // 3.2–3.9
+                    pushVoicing (b0 + barNudge, len, chord, 0.58f + energy * 0.1f);
+                }
+                else if (shape == 1)
+                {
+                    // Two holds: downbeat + pickup into next phrase.
+                    const double a = 1.6 + rand01() * 0.7;
+                    pushVoicing (b0 + barNudge, a, chord, 0.62f);
+                    if (rand01() < 0.55f + dens * 0.3f)
+                        pushVoicing (b0 + a + 0.15 + rand01() * 0.25, 1.4 + rand01() * 0.8,
+                                     chord, 0.52f, true);
+                }
+                else
+                {
+                    // Anticipation into the bar + sustained body.
+                    if (bar > 0 && rand01() < 0.4f + rhythm * 0.3f)
+                        pushVoicing (b0 - (0.2 + rand01() * 0.15), 0.25 + rand01() * 0.2,
+                                     chord, 0.48f, true);
+                    pushVoicing (b0 + 0.05 + barNudge, 3.0 + rand01() * 0.8, chord, 0.6f);
                 }
                 break;
             }
 
-            case ChordMode::OffbeatStabs:
-                // Classic house piano/organ: stab on every "and".
-                for (int beat = 0; beat < 4; ++beat)
-                    for (int n : chord)
-                        part.notes.push_back ({ b0 + beat + 0.5, 0.45, n,
-                                                0.68f + rand01() * 0.12f });
+            case ChordMode::Stabs:
+            {
+                // Choose hit slots inside the bar (beats), not a fixed 1 + 2.5 forever.
+                struct Hit { double at; double len; float vel; };
+                std::vector<Hit> hits;
+                const int pattern = (groovePick + bar * 3) % 5;
+                switch (pattern)
+                {
+                    case 0: // classic sparse
+                        hits = { { 0.0, 0.35 + rand01() * 0.25, 0.82f },
+                                 { 2.0 + rand01() * 0.5, 0.28 + rand01() * 0.22, 0.7f } };
+                        break;
+                    case 1: // syncopated &-heavy
+                        hits = { { 0.5 + rand01() * 0.1, 0.3 + rand01() * 0.2, 0.78f },
+                                 { 1.5 + rand01() * 0.15, 0.25 + rand01() * 0.2, 0.66f },
+                                 { 3.0 + rand01() * 0.2, 0.3 + rand01() * 0.2, 0.72f } };
+                        break;
+                    case 2: // four-on-the-and with gaps
+                        for (double t : { 0.5, 1.5, 2.5, 3.5 })
+                            if (rand01() < 0.55f + dens * 0.35f)
+                                hits.push_back ({ t + (rand01() - 0.5) * 0.06,
+                                                  0.22 + rand01() * 0.28,
+                                                  0.62f + rand01() * 0.2f });
+                        break;
+                    case 3: // long then short
+                        hits = { { 0.0, 0.9 + rand01() * 0.7, 0.8f },
+                                 { 2.75 + rand01() * 0.2, 0.2 + rand01() * 0.25, 0.68f } };
+                        break;
+                    default: // clustered turnaround feel
+                        hits = { { 0.0, 0.4 + rand01() * 0.3, 0.8f },
+                                 { 1.0 + rand01() * 0.25, 0.25 + rand01() * 0.2, 0.65f },
+                                 { 2.25 + rand01() * 0.2, 0.35 + rand01() * 0.3, 0.74f } };
+                        if (energy > 0.55f && rand01() < 0.6f)
+                            hits.push_back ({ 3.5 + rand01() * 0.1, 0.18 + rand01() * 0.15, 0.6f });
+                        break;
+                }
+
+                if (hits.empty())
+                    hits.push_back ({ 0.0, 0.4, 0.75f });
+
+                for (const auto& h : hits)
+                    pushVoicing (b0 + h.at + barNudge, h.len, chord, h.vel,
+                                 rhythm > 0.45f && rand01() < 0.35f);
                 break;
+            }
+
+            case ChordMode::OffbeatStabs:
+            {
+                // Offbeat house, but skip some "&"s and vary gate length.
+                for (int beat = 0; beat < 4; ++beat)
+                {
+                    const float keepProb = 0.55f + dens * 0.35f
+                                         - (beat == 0 ? 0.0f : 0.05f);
+                    if (rand01() > keepProb) continue;
+                    const double at = b0 + beat + 0.5
+                                    + (rand01() - 0.5) * 0.05 * (0.4 + p.humanize);
+                    const double len = (rand01() < 0.3f + rhythm * 0.3f)
+                                         ? (0.55 + rand01() * 0.55)   // longer stab
+                                         : (0.22 + rand01() * 0.28);  // short stab
+                    const float vel = 0.62f + (beat % 2 == 0 ? 0.1f : 0.0f)
+                                    + rand01() * 0.12f;
+                    pushVoicing (at, len, chord, vel, rand01() < 0.25f);
+                }
+                // Occasional downbeat punch for variety.
+                if (rand01() < 0.25f + energy * 0.25f)
+                    pushVoicing (b0 + barNudge, 0.2 + rand01() * 0.25, chord, 0.78f, true);
+                break;
+            }
 
             case ChordMode::Plucked:
-                // Rhythmic short plucks on 1/8s, density-gated.
-                for (int eighth = 0; eighth < 8; ++eighth)
+            {
+                // Mix of 1/8 and 1/16 cells, irregular density, variable gates.
+                const int steps = (rhythm > 0.55f || rand01() < 0.4f) ? 16 : 8;
+                const double step = 4.0 / (double) steps;
+                for (int s = 0; s < steps; ++s)
                 {
-                    if (rand01() > 0.35f + p.noteDensity * 0.35f) continue;
-                    for (int n : chord)
-                        part.notes.push_back ({ b0 + eighth * 0.5, 0.3, n,
-                                                0.5f + rand01() * 0.2f });
+                    float keep = 0.25f + dens * 0.45f;
+                    if (s % 4 == 0) keep += 0.12f;          // favor downbeat cells
+                    if (s % 2 == 1) keep += rhythm * 0.1f;  // syncopation when complex
+                    if (rand01() > keep) continue;
+                    const double at = b0 + s * step
+                                    + (rand01() - 0.5) * 0.03 * (0.3 + p.humanize);
+                    const double len = (rand01() < 0.2f)
+                                         ? (0.45 + rand01() * 0.4)
+                                         : (0.12 + rand01() * 0.22);
+                    pushVoicing (at, len, chord, 0.48f + rand01() * 0.28f,
+                                 rand01() < 0.4f);
                 }
                 break;
+            }
         }
     }
     return part;

@@ -59,6 +59,8 @@ target_sources(AIMidiGen PRIVATE
     src/ai/AIClient.cpp
     src/ai/MidiPattern.cpp
     src/ai/KnowledgeBase.cpp
+    src/ai/BrainCorpus.cpp
+    src/ai/BrainValidator.cpp
     src/engine/MidiDna.cpp
     src/engine/MidiGenerator.cpp
     src/engine/PreviewSounds.cpp
@@ -110,6 +112,19 @@ target_link_libraries(MidiPatternTests PRIVATE
 )
 enable_testing()
 add_test (NAME MidiPatternTests COMMAND MidiPatternTests)
+
+add_executable(BrainCorpusTests
+    tests/BrainCorpusTests.cpp
+    src/ai/BrainCorpus.cpp
+    src/ai/BrainValidator.cpp
+    src/ai/MidiPattern.cpp
+)
+target_include_directories(BrainCorpusTests PRIVATE src)
+target_link_libraries(BrainCorpusTests PRIVATE
+    juce::juce_audio_basics
+    juce::juce_core
+)
+add_test (NAME BrainCorpusTests COMMAND BrainCorpusTests)
 
 # ---------------------------------------------------------------------------
 # Claude engine harness (JUCE-free): styles, critic, chat director parses

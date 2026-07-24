@@ -3,6 +3,8 @@
 #include "../engine/MusicInstructions.h"
 #include "MidiPattern.h"
 #include "KnowledgeBase.h"
+#include "BrainCorpus.h"
+#include "BrainValidator.h"
 #include <juce_core/juce_core.h>
 #include <functional>
 #include <deque>
@@ -35,6 +37,9 @@ public:
         MidiPattern pattern;
         int knowledgeDocsUsed = 0;
         juce::StringArray matchedDocTitles;
+        juce::String primaryArchetype;
+        int brainChunksUsed = 0;
+        juce::StringArray brainValidationNotes;
     };
 
     struct ChatResponse
@@ -78,6 +83,9 @@ public:
 
     KnowledgeBase& knowledge() { return knowledgeBase; }
     const KnowledgeBase& knowledge() const { return knowledgeBase; }
+
+    BrainCorpus& brainCorpus() { return houseBrain; }
+    const BrainCorpus& brainCorpus() const { return houseBrain; }
 
     /** Live "PROJECT STATE" brief injected into every AI turn so answers are
         grounded in what's actually loaded (set by the processor each turn). */
@@ -144,6 +152,7 @@ private:
     juce::String claudeModel { "claude-sonnet-4-5" };
     juce::String openAiModel { "gpt-4o" };
     KnowledgeBase knowledgeBase;
+    BrainCorpus houseBrain;
     juce::String projectContext; // live plugin snapshot for grounding
     std::vector<Turn> history; // short conversational memory
     std::deque<juce::String> recentChordProgressions;

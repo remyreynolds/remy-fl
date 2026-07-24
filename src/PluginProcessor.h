@@ -258,6 +258,13 @@ private:
     void recordClaudeFailure (const juce::String& error,
                               PendingLocalAction action,
                               InstrumentType lane = InstrumentType::Chords);
+
+    /** Appendix C + PDF param nudges before local SongPlan generation. */
+    void applyHouseBrainRoutingBeforeGenerate();
+    /** Ch.9/11 post-gen checks on local parts; empty type = all lanes. */
+    bool localGenerationPassesBrainRules (InstrumentType only = InstrumentType::NumTypes);
+
+    juce::String lastBrainArchetype;
     juce::String buildClaudeGeneratePrompt (InstrumentType focusOrAll) const;
     juce::String currentSongPlanFingerprint() const;
     bool rollSeedUntilFingerprintChanges (const juce::String& previousFp, int maxTries = 12);

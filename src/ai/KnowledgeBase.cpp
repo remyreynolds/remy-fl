@@ -274,8 +274,31 @@ Keywords: pop, melodic, radio, catchy, uplift
                 for (const auto& entry : juce::RangedDirectoryIterator (pdfRoot, false, "*.pdf"))
                     entry.getFile().copyFileTo (pdfDest.getChildFile (entry.getFile().getFileName()));
             }
+
+            // Structured PDF corpus (Appendix E heading chunks) for BrainCorpus retrieval.
+            const auto corpusSrc = root.getParentDirectory().getChildFile ("house_brain_corpus.json");
+            if (corpusSrc.existsAsFile())
+                corpusSrc.copyFileTo (folder().getChildFile ("house_brain_corpus.json"));
             break;
         }
+    }
+
+    // Fallback corpus paths when guides/ sync root wasn't found.
+    if (! folder().getChildFile ("house_brain_corpus.json").existsAsFile())
+    {
+        const juce::File corpusCandidates[] = {
+            juce::File::getCurrentWorkingDirectory()
+                .getChildFile ("brain/1-knowledge/house_brain_corpus.json"),
+            juce::File::getSpecialLocation (juce::File::currentExecutableFile)
+                .getParentDirectory().getParentDirectory().getParentDirectory()
+                .getParentDirectory().getChildFile ("brain/1-knowledge/house_brain_corpus.json"),
+        };
+        for (auto& c : corpusCandidates)
+            if (c.existsAsFile())
+            {
+                c.copyFileTo (folder().getChildFile ("house_brain_corpus.json"));
+                break;
+            }
     }
 
     // Reload happens in constructor after this.
